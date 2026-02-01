@@ -15,6 +15,7 @@ This is the Bun + Convex web app for LinkStash. It provides the primary UI and b
 - `bun run index.ts` runs the main entry point locally.
 - `npx convex -h` lists Convex CLI commands (useful for deployments).
 - `npx convex docs` opens Convex documentation locally.
+- `bun run test:e2e` runs Playwright end-to-end tests.
 
 ## Coding Style & Naming Conventions
 - TypeScript is the primary language; follow strict compiler settings from `tsconfig.json`.
@@ -22,9 +23,21 @@ This is the Bun + Convex web app for LinkStash. It provides the primary UI and b
 - Prefer descriptive, lowerCamelCase function and variable names.
 - No formatter or linter is configured; keep code readable and consistent with existing style.
 
+## Agent Skills
+- Use the `convex` skill for any web development work that touches Convex or the app UI.
+- Follow Convex guidelines: new function syntax, explicit argument/return validators, and index names that include all fields.
+
 ## Testing Guidelines
-- No test framework or test directory is currently configured.
-- If you add tests, document the framework and add a runnable command in `package.json`.
+- Playwright is used for end-to-end tests; keep new UI flows covered with E2E tests.
+- Run `bun run test:e2e` as part of the development lifecycle before shipping changes.
+- When running E2E tests against the dev backend, set `CONVEX_URL=https://zealous-hawk-470.convex.cloud`.
+- Convex MCP tools can be used to inspect or seed data in the dev deployment.
+
+## Development Workflow
+- Develop locally: `bun install` then `bun run index.ts`.
+- Add/update tests alongside features, keep `tests/` in sync with UI flows.
+- If Convex functions change, deploy to dev with `bunx convex dev --once`.
+- Run E2E tests with `CONVEX_URL=https://zealous-hawk-470.convex.cloud bun run test:e2e`.
 
 ## Configuration & Safety Notes
 - Generated Convex files live under `convex/_generated/`; treat them as build artifacts.
