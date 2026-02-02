@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  ConvexReactClient,
+  useConvex,
+  useConvexAuth,
+  useMutation,
+  useQuery,
+} from "convex/react";
+import { ConvexAuthProvider, useAuthActions, useAuthToken } from "@convex-dev/auth/react";
+import { api } from "../convex/_generated/api";
 import "./styles.css";
 
 type Space = {
@@ -15,6 +24,7 @@ type Link = {
   description?: string;
   imageUrl?: string;
   siteName?: string;
+  faviconUrl?: string;
   archived: boolean;
   createdAt: number;
   spaceId: string;
@@ -26,21 +36,17 @@ type ModalState =
   | { kind: "renameSpace"; space: Space }
   | { kind: "deleteSpace"; space: Space };
 
-const apiFetch = async <T,>(path: string, options?: RequestInit) => {
-  const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-    },
-    ...options,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(body.error || "Request failed");
-  }
-
-  return (await response.json()) as T;
+const getConvexUrl = () => {
+  const metaEnv = (import.meta as { env?: Record<string, string> }).env;
+  const fromMeta = metaEnv?.CONVEX_URL;
+  const fromProcess = (globalThis as { process?: { env?: Record<string, string> } }).process?.env
+    ?.CONVEX_URL;
+  const fromWindow = (globalThis as { __CONVEX_URL__?: string }).__CONVEX_URL__;
+  return fromMeta || fromProcess || fromWindow || "";
 };
+
+const convexUrl = getConvexUrl();
+const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
 
 const Modal: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({
   children,
@@ -60,70 +66,179 @@ const Modal: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({
   );
 };
 
-const App = () => {
-  const [spaces, setSpaces] = useState<Space[]>([]);
+const SignIn: React.FC = () => {
+  const { signIn } = useAuthActions();
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("");
+  const e2eToken = (globalThis as { __E2E_BYPASS_TOKEN__?: string }).__E2E_BYPASS_TOKEN__;
+  const e2eEmail = (globalThis as { __E2E_EMAIL__?: string }).__E2E_EMAIL__;
+
+  return (
+    <div className="page">
+      <main className="main">
+        <section className="card">
+          <div className="section-title">Sign in</div>
+          <h1>Welcome back</h1>
+          <p className="muted">We will email you a magic link to sign in.</p>
+          <form
+            className="auth-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setStatus("");
+              if (!email.trim()) {
+                setStatus("Enter your email to continue.");
+                return;
+              }
+              const result = await signIn("resend", {
+                email: email.trim(),
+                redirectTo: "/",
+              });
+              if (!result.signingIn) {
+                setStatus("Check your email for a sign-in link.");
+              }
+            }}
+          >
+            <div>
+              <label htmlFor="email-input">Email address</label>
+              <input
+                id="email-input"
+                name="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </div>
+            <button className="button button-primary" type="submit">
+              Send magic link
+            </button>
+          </form>
+          {e2eToken ? (
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={async () => {
+                setStatus("");
+                const result = await signIn("e2e", {
+                  token: e2eToken,
+                  email: e2eEmail || email || "e2e@linkstash.dev",
+                });
+                if (!result.signingIn) {
+                  setStatus("E2E sign-in failed.");
+                }
+              }}
+            >
+              E2E sign in
+            </button>
+          ) : null}
+          {status ? <div className="status">{status}</div> : null}
+        </section>
+      </main>
+    </div>
+  );
+};
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null } as { error: Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error(error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return <AuthErrorFallback error={this.state.error} />;
+    }
+    return this.props.children;
+  }
+}
+
+const AuthErrorFallback: React.FC<{ error: Error }> = ({ error }) => {
+  const { signOut } = useAuthActions();
+  const isAuthError = /not authenticated/i.test(error.message);
+
+  useEffect(() => {
+    if (isAuthError) {
+      signOut();
+    }
+  }, [isAuthError, signOut]);
+
+  return (
+    <div className="page">
+      <main className="main">
+        <section className="card">
+          <div className="section-title">Session</div>
+          <h1>Sign in again</h1>
+          <p className="muted">
+            {isAuthError
+              ? "Your session expired. Please sign in again."
+              : "We hit an unexpected error. Please try again."}
+          </p>
+          <button className="button button-primary" type="button" onClick={() => location.reload()}>
+            Reload
+          </button>
+        </section>
+      </main>
+    </div>
+  );
+};
+
+const AuthedApp = () => {
+  const { signOut } = useAuthActions();
+  const convexClient = useConvex();
+  const spaces = useQuery(api.spaces.listSpaces, {}) ?? [];
   const [currentSpaceId, setCurrentSpaceId] = useState<string>("");
   const [archived, setArchived] = useState(false);
-  const [links, setLinks] = useState<Link[]>([]);
-  const [status, setStatus] = useState("");
   const [modal, setModal] = useState<ModalState>({ kind: "none" });
   const [urlInput, setUrlInput] = useState("");
+  const [status, setStatus] = useState("");
+
+  const links =
+    useQuery(
+      api.links.listLinks,
+      currentSpaceId
+        ? {
+            spaceId: currentSpaceId as never,
+            archived,
+          }
+        : "skip",
+    ) ?? [];
+
+  const ensureDefaultSpace = useMutation(api.spaces.ensureDefaultSpace);
+  const createSpace = useMutation(api.spaces.createSpace);
+  const renameSpace = useMutation(api.spaces.renameSpace);
+  const deleteSpace = useMutation(api.spaces.deleteSpace);
+  const addLink = useMutation(api.links.addLink);
+  const moveLink = useMutation(api.links.moveLink);
+  const setLinkArchived = useMutation(api.links.setLinkArchived);
 
   const currentSpace = useMemo(
     () => spaces.find((space) => space._id === currentSpaceId),
     [spaces, currentSpaceId],
   );
 
-  const fetchSpaces = async () => {
-    const { spaces: data } = await apiFetch<{ spaces: Space[] }>("/api/spaces");
-    setSpaces(data);
-    if (!currentSpaceId) {
-      const defaultSpace = data.find((space) => space.isDefault) ?? data[0];
+  useEffect(() => {
+    ensureDefaultSpace().catch((error) => {
+      setStatus(error instanceof Error ? error.message : "Failed to initialize.");
+    });
+  }, [ensureDefaultSpace]);
+
+  useEffect(() => {
+    if (!currentSpaceId && spaces.length > 0) {
+      const defaultSpace = spaces.find((space) => space.isDefault) ?? spaces[0];
       if (defaultSpace) {
         setCurrentSpaceId(defaultSpace._id);
       }
     }
-  };
-
-  const fetchLinks = async (spaceId: string, isArchived: boolean) => {
-    if (!spaceId) {
-      setLinks([]);
-      return;
-    }
-    const { links: data } = await apiFetch<{ links: Link[] }>(
-      `/api/links?spaceId=${spaceId}&archived=${isArchived}`,
-    );
-    setLinks(data);
-  };
-
-  const refresh = async () => {
-    try {
-      setStatus("Syncing...");
-      await fetchSpaces();
-      if (currentSpaceId) {
-        await fetchLinks(currentSpaceId, archived);
-      }
-      setStatus("");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Something went wrong");
-    }
-  };
-
-  useEffect(() => {
-    apiFetch("/api/spaces/ensure-default", { method: "POST" })
-      .then(refresh)
-      .catch((error) => {
-        setStatus(error instanceof Error ? error.message : "Something went wrong");
-      });
-  }, []);
-
-  useEffect(() => {
-    if (currentSpaceId) {
-      fetchLinks(currentSpaceId, archived).catch((error) => {
-        setStatus(error instanceof Error ? error.message : "Something went wrong");
-      });
-    }
-  }, [currentSpaceId, archived]);
+  }, [currentSpaceId, spaces]);
 
   const handleAddLink = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -131,28 +246,25 @@ const App = () => {
     if (!url || !currentSpaceId) {
       return;
     }
-    await apiFetch("/api/links", {
-      method: "POST",
-      body: JSON.stringify({ url, spaceId: currentSpaceId }),
+    await addLink({
+      spaceId: currentSpaceId as never,
+      url,
     });
     setUrlInput("");
-    await fetchLinks(currentSpaceId, archived);
   };
 
   const handleArchiveToggle = async (link: Link) => {
-    await apiFetch(`/api/links/${link._id}/archive`, {
-      method: "PATCH",
-      body: JSON.stringify({ archived: !link.archived }),
+    await setLinkArchived({
+      linkId: link._id as never,
+      archived: !link.archived,
     });
-    await fetchLinks(currentSpaceId, archived);
   };
 
   const handleMove = async (link: Link, spaceId: string) => {
-    await apiFetch(`/api/links/${link._id}/move`, {
-      method: "PATCH",
-      body: JSON.stringify({ spaceId }),
+    await moveLink({
+      linkId: link._id as never,
+      spaceId: spaceId as never,
     });
-    await fetchLinks(currentSpaceId, archived);
   };
 
   const handleExport = async () => {
@@ -160,9 +272,10 @@ const App = () => {
       return;
     }
     try {
-      const { links: data } = await apiFetch<{ links: Link[] }>(
-        `/api/links?spaceId=${currentSpaceId}&archived=false`,
-      );
+      const data = await convexClient.query(api.links.listLinks, {
+        spaceId: currentSpaceId as never,
+        archived: false,
+      });
       const payload = data.map((link) => link.url).join("\n");
       await navigator.clipboard.writeText(payload);
       setStatus(payload ? "Copied active links to clipboard." : "No active links to export.");
@@ -211,6 +324,9 @@ const App = () => {
             </div>
           ))}
         </div>
+        <button className="button button-ghost" type="button" onClick={() => signOut()}>
+          Sign out
+        </button>
       </aside>
 
       <main className="main">
@@ -309,7 +425,9 @@ const App = () => {
                       onChange={(event) => {
                         if (event.target.value) {
                           handleMove(link, event.target.value).catch((error) => {
-                            setStatus(error instanceof Error ? error.message : "Something went wrong");
+                            setStatus(
+                              error instanceof Error ? error.message : "Something went wrong",
+                            );
                           });
                           event.target.value = "";
                         }
@@ -344,12 +462,8 @@ const App = () => {
             <SpaceCreateForm
               onCancel={() => setModal({ kind: "none" })}
               onCreate={async (name) => {
-                await apiFetch("/api/spaces", {
-                  method: "POST",
-                  body: JSON.stringify({ name }),
-                });
+                await createSpace({ name });
                 setModal({ kind: "none" });
-                await refresh();
               }}
             />
           ) : null}
@@ -358,12 +472,8 @@ const App = () => {
               space={modal.space}
               onCancel={() => setModal({ kind: "none" })}
               onRename={async (name) => {
-                await apiFetch(`/api/spaces/${modal.space._id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ name }),
-                });
+                await renameSpace({ spaceId: modal.space._id as never, name });
                 setModal({ kind: "none" });
-                await refresh();
               }}
             />
           ) : null}
@@ -372,10 +482,11 @@ const App = () => {
               space={modal.space}
               onCancel={() => setModal({ kind: "none" })}
               onDelete={async () => {
-                await apiFetch(`/api/spaces/${modal.space._id}`, { method: "DELETE" });
+                await deleteSpace({ spaceId: modal.space._id as never });
                 setModal({ kind: "none" });
-                setCurrentSpaceId("");
-                await refresh();
+                if (currentSpaceId === modal.space._id) {
+                  setCurrentSpaceId("");
+                }
               }}
             />
           ) : null}
@@ -383,6 +494,21 @@ const App = () => {
       ) : null}
     </div>
   );
+};
+
+const App = () => {
+  const { isAuthenticated, isLoading } = useConvexAuth();
+  const authToken = useAuthToken();
+
+  if (isLoading) {
+    return <div className="status">Loading...</div>;
+  }
+
+  if (!isAuthenticated || !authToken) {
+    return <SignIn />;
+  }
+
+  return <AuthedApp />;
 };
 
 const SpaceCreateForm: React.FC<{
@@ -489,7 +615,21 @@ const SpaceDeleteForm: React.FC<{
 };
 
 const rootElement = document.querySelector<HTMLDivElement>("#root");
+const globalRoot = globalThis as typeof globalThis & { __LINKSTASH_ROOT__?: ReturnType<typeof createRoot> };
 
 if (rootElement) {
-  createRoot(rootElement).render(<App />);
+  if (!convex) {
+    rootElement.innerHTML = "<p>CONVEX_URL is not configured.</p>";
+  } else {
+    if (!globalRoot.__LINKSTASH_ROOT__) {
+      globalRoot.__LINKSTASH_ROOT__ = createRoot(rootElement);
+    }
+    globalRoot.__LINKSTASH_ROOT__.render(
+      <ConvexAuthProvider client={convex}>
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+      </ConvexAuthProvider>,
+    );
+  }
 }

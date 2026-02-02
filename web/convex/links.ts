@@ -1,6 +1,7 @@
 import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 const metadataFields = {
   title: v.optional(v.string()),
@@ -13,6 +14,7 @@ const metadataFields = {
 const linkValidator = v.object({
   _id: v.id("links"),
   _creationTime: v.number(),
+  userId: v.id("users"),
   url: v.string(),
   title: v.optional(v.string()),
   description: v.optional(v.string()),
@@ -34,10 +36,14 @@ export const listLinks = query({
   },
   returns: v.array(linkValidator),
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
     return ctx.db
       .query("links")
-      .withIndex("by_spaceId_and_archived_and_createdAt", (q) =>
-        q.eq("spaceId", args.spaceId).eq("archived", args.archived),
+      .withIndex("by_userId_and_spaceId_and_archived_and_createdAt", (q) =>
+        q.eq("userId", userId).eq("spaceId", args.spaceId).eq("archived", args.archived),
       )
       .order("desc")
       .collect();
@@ -53,12 +59,23 @@ export const addLink = mutation({
   },
   returns: v.id("links"),
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
     const url = normalizeUrl(args.url);
+
+    const space = await ctx.db.get(args.spaceId);
+    if (!space || space.userId !== userId) {
+      throw new Error("Space not found");
+    }
 
     if (args.dedupe) {
       const existing = await ctx.db
         .query("links")
-        .withIndex("by_spaceId_and_url", (q) => q.eq("spaceId", args.spaceId).eq("url", url))
+        .withIndex("by_userId_and_spaceId_and_url", (q) =>
+          q.eq("userId", userId).eq("spaceId", args.spaceId).eq("url", url),
+        )
         .first();
 
       if (existing) {
@@ -68,6 +85,7 @@ export const addLink = mutation({
 
     const now = Date.now();
     const linkId = await ctx.db.insert("links", {
+      userId,
       spaceId: args.spaceId,
       url,
       title: args.title,
@@ -96,6 +114,18 @@ export const moveLink = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+    const link = await ctx.db.get(args.linkId);
+    if (!link || link.userId !== userId) {
+      throw new Error("Link not found");
+    }
+    const space = await ctx.db.get(args.spaceId);
+    if (!space || space.userId !== userId) {
+      throw new Error("Space not found");
+    }
     await ctx.db.patch(args.linkId, {
       spaceId: args.spaceId,
       updatedAt: Date.now(),
@@ -111,6 +141,14 @@ export const setLinkArchived = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+    const link = await ctx.db.get(args.linkId);
+    if (!link || link.userId !== userId) {
+      throw new Error("Link not found");
+    }
     await ctx.db.patch(args.linkId, {
       archived: args.archived,
       updatedAt: Date.now(),
@@ -126,6 +164,10 @@ export const updateLinkMetadata = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const link = await ctx.db.get(args.linkId);
+    if (!link) {
+      return null;
+    }
     await ctx.db.patch(args.linkId, {
       title: args.title,
       description: args.description,

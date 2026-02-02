@@ -10,6 +10,12 @@ export default defineConfig({
   webServer: {
     command: "bun index.ts",
     port: 3000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
+    env: {
+      PORT: "3000",
+      CONVEX_URL: process.env.CONVEX_URL ?? "",
+      E2E_BYPASS_TOKEN: process.env.E2E_BYPASS_TOKEN ?? "",
+      E2E_EMAIL: process.env.E2E_EMAIL ?? "",
+    },
   },
 });

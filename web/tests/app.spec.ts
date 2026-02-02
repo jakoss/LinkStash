@@ -1,5 +1,17 @@
 import { test, expect } from "@playwright/test";
 
+test.beforeEach(({}, testInfo) => {
+  if (!process.env.E2E_BYPASS_TOKEN) {
+    testInfo.skip("Set E2E_BYPASS_TOKEN to run authenticated tests.");
+  }
+});
+
+const signIn = async (page: import("@playwright/test").Page) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "E2E sign in" }).click();
+  await page.getByRole("button", { name: "New space" }).waitFor();
+};
+
 const createSpace = async (page: import("@playwright/test").Page, name: string) => {
   await page.getByRole("button", { name: "New space" }).click();
   await page.getByPlaceholder("Space name").fill(name);
@@ -27,7 +39,7 @@ const deleteSpace = async (page: import("@playwright/test").Page, name: string) 
 };
 
 test("loads the LinkStash shell", async ({ page }) => {
-  await page.goto("/");
+  await signIn(page);
   await expect(page.getByText("LinkStash")).toBeVisible();
   await expect(page.getByRole("button", { name: "New space" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Export active links" })).toBeVisible();
@@ -36,7 +48,7 @@ test("loads the LinkStash shell", async ({ page }) => {
 
 test("creates space, manages links, exports active links", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto("/");
+  await signIn(page);
 
   const spaceName = `E2E Space ${Date.now()}`;
   await createSpace(page, spaceName);
@@ -69,7 +81,7 @@ test("creates space, manages links, exports active links", async ({ page, contex
 });
 
 test("move link between spaces", async ({ page }) => {
-  await page.goto("/");
+  await signIn(page);
 
   const sourceSpace = `Move From ${Date.now()}`;
   const targetSpace = `Move To ${Date.now()}`;
@@ -93,7 +105,7 @@ test("move link between spaces", async ({ page }) => {
 });
 
 test("archive toggle updates list counts", async ({ page }) => {
-  await page.goto("/");
+  await signIn(page);
 
   const spaceName = `Archive Space ${Date.now()}`;
   await createSpace(page, spaceName);
@@ -123,7 +135,7 @@ test("archive toggle updates list counts", async ({ page }) => {
 
 test("export handles empty active list", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto("/");
+  await signIn(page);
 
   const spaceName = `Empty Export ${Date.now()}`;
   await createSpace(page, spaceName);
@@ -134,7 +146,7 @@ test("export handles empty active list", async ({ page, context }) => {
 });
 
 test("url input trims whitespace", async ({ page }) => {
-  await page.goto("/");
+  await signIn(page);
 
   const spaceName = `Trim Space ${Date.now()}`;
   await createSpace(page, spaceName);
@@ -147,7 +159,7 @@ test("url input trims whitespace", async ({ page }) => {
 });
 
 test("newest links appear first", async ({ page }) => {
-  await page.goto("/");
+  await signIn(page);
 
   const spaceName = `Order Space ${Date.now()}`;
   await createSpace(page, spaceName);
@@ -170,7 +182,7 @@ test("newest links appear first", async ({ page }) => {
 });
 
 test("space deletion requires confirmation and blocks default", async ({ page }) => {
-  await page.goto("/");
+  await signIn(page);
 
   const spaceName = `Delete Space ${Date.now()}`;
   await createSpace(page, spaceName);
@@ -197,7 +209,7 @@ test("space deletion requires confirmation and blocks default", async ({ page })
 });
 
 test("metadata updates link title asynchronously", async ({ page }) => {
-  await page.goto("/");
+  await signIn(page);
 
   const spaceName = `Metadata Space ${Date.now()}`;
   await createSpace(page, spaceName);
