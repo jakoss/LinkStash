@@ -5,7 +5,8 @@
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.55.0",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node": "^22.10.2"
   },
   "peerDependencies": {
     "typescript": "^5"

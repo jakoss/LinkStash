@@ -1,27 +1,40 @@
-import index from "./public/index.html";
+import { fileURLToPath } from "node:url";
 
 const port = Number(process.env.PORT ?? 3000);
-const convexUrl = process.env.CONVEX_URL ?? "";
-const e2eToken = process.env.E2E_BYPASS_TOKEN ?? "";
-const e2eEmail = process.env.E2E_EMAIL ?? "";
-const envFile = new URL("./public/env.js", import.meta.url);
+const entrypoint = fileURLToPath(new URL("./public/index.html", import.meta.url));
+const outdir = fileURLToPath(new URL("./public/.dist", import.meta.url));
+const distBase = new URL("./public/.dist/", import.meta.url);
 
-const envScript = [
-  `window.__CONVEX_URL__ = ${JSON.stringify(convexUrl)};`,
-  `window.__E2E_BYPASS_TOKEN__ = ${JSON.stringify(e2eToken)};`,
-  `window.__E2E_EMAIL__ = ${JSON.stringify(e2eEmail)};`,
-].join("\n");
+const result = await Bun.build({
+  entrypoints: [entrypoint],
+  outdir,
+  target: "browser",
+  env: "inline",
+});
 
-await Bun.write(envFile, envScript);
+if (!result.success) {
+  for (const log of result.logs) {
+    console.error(log);
+  }
+  throw new Error("Failed to bundle frontend assets.");
+}
 
 Bun.serve({
   port,
-  routes: {
-    "/": index,
-  },
-  development: {
-    hmr: true,
-    console: true,
+  fetch: async (req) => {
+    const url = new URL(req.url);
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/") {
+      pathname = "/index.html";
+    }
+    if (pathname.includes("..")) {
+      return new Response("Not found", { status: 404 });
+    }
+    const file = Bun.file(new URL(`.${pathname}`, distBase));
+    if (await file.exists()) {
+      return new Response(file);
+    }
+    return new Response("Not found", { status: 404 });
   },
 });
 
