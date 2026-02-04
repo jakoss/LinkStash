@@ -18,6 +18,7 @@ kotlinx-serialization = "1.10.0"
 kotlinx-datetime = "0.7.1"
 material3 = "1.10.0-alpha05"
 androidx-nav3 = "1.0.0-alpha06"
+convex = "0.7.1"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -42,6 +43,7 @@ androidx-nav3-viewmodel = { module = "org.jetbrains.androidx.lifecycle:lifecycle
 kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-serialization = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+convex = { module = "dev.convex:android-convexmobile", version.ref = "convex" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }

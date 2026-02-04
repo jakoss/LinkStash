@@ -69,4 +69,5 @@ kotlin {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
+    androidMainImplementation(libs.convex)
 }
