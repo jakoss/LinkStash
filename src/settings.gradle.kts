@@ -33,5 +33,6 @@ plugins {
 }
 
 include(":shared")
+include(":contracts")
 include(":androidApp")
 include(":desktopApp")

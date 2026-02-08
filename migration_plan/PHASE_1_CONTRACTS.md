@@ -46,16 +46,16 @@ Error envelope:
   - `details` (optional structured map)
 
 ## Tasks (checklist)
-- [ ] Add `src/contracts/` Gradle module and wire into `settings.gradle.kts`
-- [ ] Add serialization plugin + dependencies
-- [ ] Define DTOs and error envelope
-- [ ] Add minimal API client helpers (optional, but recommended):
-  - [ ] Base URL config
-  - [ ] Auth header injection (bearer)
-  - [ ] Error decoding into `ApiError`
-  - [ ] Ktor client engines per target:
-    - [ ] Android: `io.ktor:ktor-client-okhttp`
-    - [ ] JS (web): `io.ktor:ktor-client-js` (uses Fetch)
+- [x] Add `src/contracts/` Gradle module and wire into `settings.gradle.kts`
+- [x] Add serialization plugin + dependencies
+- [x] Define DTOs and error envelope
+- [x] Add minimal API client helpers (optional, but recommended):
+  - [x] Base URL config
+  - [x] Auth header injection (bearer)
+  - [x] Error decoding into `ApiError`
+  - [x] Ktor client engines per target:
+    - [x] Android: `io.ktor:ktor-client-okhttp`
+    - [x] JS (web): `io.ktor:ktor-client-js` (uses Fetch)
 
 ## Deliverables
 - `src/contracts` module compiling for all required targets
