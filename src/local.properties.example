@@ -1,0 +1,19 @@
+# LinkStash local development template.
+# Copy selected entries to local.properties and adjust as needed.
+
+# Android SDK (optional for server-only work)
+sdk.dir=/Users/your-user/Library/Android/sdk
+
+# Server env vars consumed by :server:runServerLocal
+# Either direct ENV_NAME=value or server.env.ENV_NAME=value works.
+server.env.DB_URL=jdbc:sqlite:/tmp/linkstash-local.db
+server.env.SESSION_SECRET=local-dev-session-secret-change-me
+server.env.TOKEN_HASHING_SECRET=local-dev-token-hash-secret-change-me
+server.env.RAINDROP_TOKEN_ENCRYPTION_KEY=local-dev-raindrop-encryption-key-change-me
+server.env.LINKSTASH_ROOT_COLLECTION_TITLE=LinkStash
+server.env.LINKSTASH_DEFAULT_SPACE_TITLE=Inbox
+server.env.CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080
+
+# Optional auth env vars for later phases
+server.env.RAINDROP_CLIENT_ID=
+server.env.RAINDROP_CLIENT_SECRET=

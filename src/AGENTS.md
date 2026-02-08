@@ -5,7 +5,7 @@
 
 ## Base Technology
 - Kotlin Multiplatform (KMP) is the foundation for shared models and app code.
-- Ktor is the backend technology for the upcoming `server` module.
+- Ktor is the backend technology for the `server` module.
 - Compose Multiplatform is used for UI modules (Android today, web later).
 
 ## Navigation
@@ -15,14 +15,17 @@
 - `settings.gradle.kts` and `gradlew` in `src/` define the shared build.
 - `shared/` contains KMP shared code.
 - `androidApp/` is the Android application.
-- `contracts/` will contain shared API DTOs and error envelopes.
-- `server/` will contain the Ktor backend.
+- `contracts/` contains shared API DTOs and error envelopes.
+- `server/` contains the Ktor backend.
 - `webApp/` will contain the Compose for Web frontend.
 - `iosApp/` exists but is not currently supported.
 - `desktopApp/` is present but not a focus for product development.
 
 ## Build, Test, and Development Commands
 - `./gradlew tasks` lists available Gradle tasks from `src/`.
+- `./gradlew :server:compileKotlin` verifies server module compilation.
+- `DB_URL="jdbc:sqlite:/absolute/path/to/linkstash.db" SESSION_SECRET="..." TOKEN_HASHING_SECRET="..." RAINDROP_TOKEN_ENCRYPTION_KEY="..." ./gradlew :server:run` runs the Ktor server.
+- `./gradlew :server:runServerLocal` runs the server with env vars loaded from `src/local.properties` (supports `ENV_NAME=value` or `server.env.ENV_NAME=value`).
 - `./gradlew :androidApp:assembleDebug` builds the Android debug app.
 - `./gradlew :shared:compileKotlinMetadata` verifies shared module compilation.
 - `./gradlew :desktopApp:run` runs the desktop app (optional/local only).

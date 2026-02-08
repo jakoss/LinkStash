@@ -5,7 +5,7 @@ Last updated: 2026-02-08
 ## Phases
 - [x] Phase 0 — Product + repo alignment (`PHASE_0_PRODUCT_REPO_ALIGNMENT.md`)
 - [x] Phase 1 — Contracts foundation (`PHASE_1_CONTRACTS.md`)
-- [ ] Phase 2 — Ktor API skeleton + DB (`PHASE_2_SERVER_SKELETON_DB.md`)
+- [x] Phase 2 — Ktor API skeleton + DB (`PHASE_2_SERVER_SKELETON_DB.md`)
 - [ ] Phase 3 — Auth (Raindrop OAuth + LinkStash sessions) (`PHASE_3_AUTH_SESSIONS.md`)
 - [ ] Phase 4 — Raindrop LinkStash bootstrap (`PHASE_4_RAINDROP_BOOTSTRAP.md`)
 - [ ] Phase 5 — Domain endpoints (spaces + links) (`PHASE_5_DOMAIN_API.md`)
@@ -14,6 +14,6 @@ Last updated: 2026-02-08
 - [ ] Phase 8 — Decommission Convex/Bun web (`PHASE_8_DECOMMISSION_CONVEX.md`)
 
 ## Working Notes
-- Current focus: Phase 2 — Ktor API skeleton + DB (`PHASE_2_SERVER_SKELETON_DB.md`).
-- Next up: Phase 2 — Ktor API skeleton + DB (`PHASE_2_SERVER_SKELETON_DB.md`).
+- Current focus: Phase 3 — Auth (Raindrop OAuth + LinkStash sessions) (`PHASE_3_AUTH_SESSIONS.md`).
+- Next up: Phase 3 — Auth (Raindrop OAuth + LinkStash sessions) (`PHASE_3_AUTH_SESSIONS.md`).
 - Blockers: Raindrop OAuth credentials still need to be provisioned in environment before Phase 3 auth implementation.
