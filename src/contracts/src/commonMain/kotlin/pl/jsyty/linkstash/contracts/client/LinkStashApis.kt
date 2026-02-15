@@ -8,6 +8,7 @@ import de.jensklingenberg.ktorfit.http.POST
 import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
 import pl.jsyty.linkstash.contracts.auth.AuthExchangeRequest
+import pl.jsyty.linkstash.contracts.auth.AuthExchangeResponse
 import pl.jsyty.linkstash.contracts.auth.AuthStartResponse
 import pl.jsyty.linkstash.contracts.link.LinkCreateRequest
 import pl.jsyty.linkstash.contracts.link.LinkDto
@@ -17,13 +18,23 @@ import pl.jsyty.linkstash.contracts.space.SpaceCreateRequest
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 import pl.jsyty.linkstash.contracts.space.SpaceRenameRequest
 import pl.jsyty.linkstash.contracts.space.SpacesListResponse
+import pl.jsyty.linkstash.contracts.user.UserDto
 
 interface AuthApi {
-    @GET("auth/start")
-    suspend fun start(): AuthStartResponse
+    @GET("auth/raindrop/start")
+    suspend fun start(
+        @Query("redirectUri") redirectUri: String? = null,
+        @Query("codeVerifier") codeVerifier: String? = null
+    ): AuthStartResponse
 
-    @POST("auth/exchange")
-    suspend fun exchange(@Body request: AuthExchangeRequest): Unit
+    @POST("auth/raindrop/exchange")
+    suspend fun exchange(@Body request: AuthExchangeRequest): AuthExchangeResponse
+
+    @POST("auth/logout")
+    suspend fun logout(): Unit
+
+    @GET("me")
+    suspend fun me(): UserDto
 }
 
 interface SpacesApi {

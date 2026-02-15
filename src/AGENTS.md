@@ -24,8 +24,8 @@
 ## Build, Test, and Development Commands
 - `./gradlew tasks` lists available Gradle tasks from `src/`.
 - `./gradlew :server:compileKotlin` verifies server module compilation.
-- `DB_URL="jdbc:sqlite:/absolute/path/to/linkstash.db" SESSION_SECRET="..." TOKEN_HASHING_SECRET="..." RAINDROP_TOKEN_ENCRYPTION_KEY="..." ./gradlew :server:run` runs the Ktor server.
-- `./gradlew :server:runServerLocal` runs the server with env vars loaded from `src/local.properties` (supports `ENV_NAME=value` or `server.env.ENV_NAME=value`).
+- `./gradlew :server:runServerLocal` runs the Ktor server with env vars loaded from `src/local.properties` (supports `ENV_NAME=value` or `server.env.ENV_NAME=value`). Use this as the default local run command.
+- `DB_URL="jdbc:sqlite:/absolute/path/to/linkstash.db" SESSION_SECRET="..." TOKEN_HASHING_SECRET="..." RAINDROP_TOKEN_ENCRYPTION_KEY="..." RAINDROP_CLIENT_ID="..." RAINDROP_CLIENT_SECRET="..." RAINDROP_REDIRECT_URI="..." ./gradlew :server:run` runs the server with inline env vars when `runServerLocal` is not desired.
 - `./gradlew :androidApp:assembleDebug` builds the Android debug app.
 - `./gradlew :shared:compileKotlinMetadata` verifies shared module compilation.
 - `./gradlew :desktopApp:run` runs the desktop app (optional/local only).

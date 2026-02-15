@@ -1,0 +1,15 @@
+{
+  "name": "linkstash-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bunx playwright test",
+    "test:auth": "bunx playwright test specs/auth.e2e.spec.ts",
+    "test:headed": "bunx playwright test --headed",
+    "install:browsers": "bunx playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.10.2"
+  }
+}

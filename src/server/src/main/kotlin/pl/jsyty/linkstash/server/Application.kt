@@ -17,11 +17,12 @@ import io.ktor.server.routing.routing
 import java.util.UUID
 import org.slf4j.event.Level
 import pl.jsyty.linkstash.contracts.LinkStashJson
+import pl.jsyty.linkstash.server.auth.configureAuthModule
 import pl.jsyty.linkstash.server.config.AppConfig
 import pl.jsyty.linkstash.server.db.DatabaseFactory
 
 fun Application.linkStashModule(config: AppConfig = AppConfig.fromEnv()) {
-    DatabaseFactory.connectAndMigrate(config)
+    val database = DatabaseFactory.connectAndMigrate(config)
 
     install(CallId) {
         retrieveFromHeader(HttpHeaders.XRequestId)
@@ -63,6 +64,8 @@ fun Application.linkStashModule(config: AppConfig = AppConfig.fromEnv()) {
             }
         }
     }
+
+    configureAuthModule(config, database)
 
     routing {
         get("/healthz") {

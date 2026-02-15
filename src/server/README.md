@@ -9,6 +9,9 @@ DB_URL="jdbc:sqlite:/absolute/path/to/linkstash.db" \
 SESSION_SECRET="change-me" \
 TOKEN_HASHING_SECRET="change-me-too" \
 RAINDROP_TOKEN_ENCRYPTION_KEY="change-me-encryption-key" \
+RAINDROP_CLIENT_ID="your-raindrop-client-id" \
+RAINDROP_CLIENT_SECRET="your-raindrop-client-secret" \
+RAINDROP_REDIRECT_URI="http://localhost:8080/v1/auth/raindrop/callback" \
 LINKSTASH_ROOT_COLLECTION_TITLE="LinkStash" \
 LINKSTASH_DEFAULT_SPACE_TITLE="Inbox" \
 ./gradlew :server:run
@@ -32,3 +35,11 @@ Server defaults:
 Optional CORS override:
 - `CORS_ALLOWED_ORIGINS` as comma-separated origins
   - example: `http://localhost:5173,http://127.0.0.1:5173`
+
+## Phase 3 auth endpoints
+
+- `GET /v1/auth/raindrop/start` (supports optional `redirectUri` and `codeVerifier` query params)
+- `POST /v1/auth/raindrop/start` (same behavior as GET)
+- `POST /v1/auth/raindrop/exchange`
+- `GET /v1/me` (requires cookie or bearer auth)
+- `POST /v1/auth/logout` (requires cookie or bearer auth)

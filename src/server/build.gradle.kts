@@ -24,7 +24,13 @@ dependencies {
     implementation(libs.ktor.server.cors)
     implementation(libs.ktor.server.callLogging)
     implementation(libs.ktor.server.callId)
+    implementation(libs.ktor.server.auth)
+    implementation(libs.ktor.server.sessions)
+    implementation(libs.ktor.server.statusPages)
     implementation(libs.ktor.serialization.kotlinx.json)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.contentNegotiation)
+    implementation(libs.ktor.client.cio)
 
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
