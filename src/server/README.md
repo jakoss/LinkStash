@@ -36,10 +36,11 @@ Optional CORS override:
 - `CORS_ALLOWED_ORIGINS` as comma-separated origins
   - example: `http://localhost:5173,http://127.0.0.1:5173`
 
-## Phase 3 auth endpoints
+## Phase 4 auth/bootstrap endpoints
 
 - `GET /v1/auth/raindrop/start` (supports optional `redirectUri` and `codeVerifier` query params)
 - `POST /v1/auth/raindrop/start` (same behavior as GET)
 - `POST /v1/auth/raindrop/exchange`
 - `GET /v1/me` (requires cookie or bearer auth)
+- `GET /v1/spaces` (requires cookie or bearer auth; scoped under LinkStash root)
 - `POST /v1/auth/logout` (requires cookie or bearer auth)

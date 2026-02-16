@@ -2,12 +2,14 @@ package pl.jsyty.linkstash.server.auth
 
 import java.util.UUID
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
+import pl.jsyty.linkstash.server.db.LinkStashConfigTable
 import pl.jsyty.linkstash.contracts.user.UserDto
 import pl.jsyty.linkstash.server.db.OauthStatesTable
 import pl.jsyty.linkstash.server.db.RaindropTokensTable
@@ -27,6 +29,14 @@ data class StoredRaindropTokens(
     val refreshTokenEncrypted: String?,
     val expiresAtEpochSeconds: Long?,
     val scope: String?
+)
+
+data class StoredLinkStashConfig(
+    val userId: String,
+    val rootCollectionId: String?,
+    val defaultSpaceCollectionId: String?,
+    val rootCollectionTitle: String,
+    val defaultSpaceTitle: String
 )
 
 class OauthStateRepository(private val db: Database) {
@@ -236,6 +246,81 @@ class UserRepository(private val db: Database) {
                     )
                 }
         }
+    }
+}
+
+class LinkStashConfigRepository(private val db: Database) {
+    fun findByUserId(userId: String): StoredLinkStashConfig? {
+        return transaction(db = db) {
+            LinkStashConfigTable.selectAll()
+                .where { LinkStashConfigTable.userId eq userId }
+                .limit(1)
+                .singleOrNull()
+                ?.toStoredConfig()
+        }
+    }
+
+    fun upsert(
+        userId: String,
+        rootCollectionId: String?,
+        defaultSpaceCollectionId: String?,
+        rootCollectionTitle: String,
+        defaultSpaceTitle: String,
+        nowEpochSeconds: Long
+    ): StoredLinkStashConfig {
+        return transaction(db = db) {
+            val existingRow = LinkStashConfigTable.selectAll()
+                .where { LinkStashConfigTable.userId eq userId }
+                .limit(1)
+                .singleOrNull()
+
+            if (existingRow == null) {
+                val nextId = LinkStashConfigTable
+                    .selectAll()
+                    .orderBy(LinkStashConfigTable.id, SortOrder.DESC)
+                    .limit(1)
+                    .singleOrNull()
+                    ?.get(LinkStashConfigTable.id)
+                    ?.plus(1)
+                    ?: 1
+
+                LinkStashConfigTable.insert {
+                    it[id] = nextId
+                    it[LinkStashConfigTable.userId] = userId
+                    it[LinkStashConfigTable.rootCollectionId] = rootCollectionId
+                    it[LinkStashConfigTable.defaultSpaceCollectionId] = defaultSpaceCollectionId
+                    it[LinkStashConfigTable.rootCollectionTitle] = rootCollectionTitle
+                    it[LinkStashConfigTable.defaultSpaceTitle] = defaultSpaceTitle
+                    it[createdAtEpochSeconds] = nowEpochSeconds
+                    it[updatedAtEpochSeconds] = nowEpochSeconds
+                }
+            } else {
+                LinkStashConfigTable.update({ LinkStashConfigTable.userId eq userId }) {
+                    it[LinkStashConfigTable.rootCollectionId] = rootCollectionId
+                    it[LinkStashConfigTable.defaultSpaceCollectionId] = defaultSpaceCollectionId
+                    it[LinkStashConfigTable.rootCollectionTitle] = rootCollectionTitle
+                    it[LinkStashConfigTable.defaultSpaceTitle] = defaultSpaceTitle
+                    it[updatedAtEpochSeconds] = nowEpochSeconds
+                }
+            }
+
+            LinkStashConfigTable.selectAll()
+                .where { LinkStashConfigTable.userId eq userId }
+                .limit(1)
+                .single()
+                .toStoredConfig()
+        }
+    }
+
+    private fun org.jetbrains.exposed.v1.core.ResultRow.toStoredConfig(): StoredLinkStashConfig {
+        return StoredLinkStashConfig(
+            userId = get(LinkStashConfigTable.userId)
+                ?: throw IllegalStateException("linkstash_config.user_id is null"),
+            rootCollectionId = get(LinkStashConfigTable.rootCollectionId),
+            defaultSpaceCollectionId = get(LinkStashConfigTable.defaultSpaceCollectionId),
+            rootCollectionTitle = get(LinkStashConfigTable.rootCollectionTitle),
+            defaultSpaceTitle = get(LinkStashConfigTable.defaultSpaceTitle)
+        )
     }
 }
 

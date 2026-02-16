@@ -21,17 +21,16 @@ Out of scope:
   - `LINKSTASH_DEFAULT_SPACE_TITLE`
 
 ## Tasks (checklist)
-- [ ] Add `linkstash_config` row creation on first login:
-  - [ ] Create root collection if missing, persist `rootCollectionId`
-  - [ ] Create default space under root if missing, persist `defaultSpaceCollectionId`
-- [ ] Add validation on each request:
-  - [ ] If stored ids no longer exist, attempt rediscovery by title; otherwise recreate and update config
-- [ ] Guardrail:
-  - [ ] Never read/write collections outside `rootCollectionId`
+- [x] Add `linkstash_config` row creation on first login:
+  - [x] Create root collection if missing, persist `rootCollectionId`
+  - [x] Create default space under root if missing, persist `defaultSpaceCollectionId`
+- [x] Add validation on each request:
+  - [x] If stored ids no longer exist, attempt rediscovery by title; otherwise recreate and update config
+- [x] Guardrail:
+  - [x] Never read/write collections outside `rootCollectionId`
 
 ## Deliverables
 - `/v1/spaces` returns at least the default space after login.
 
 ## Acceptance criteria
 - Bootstrap is idempotent and resilient to the user deleting the root/default collection.
-

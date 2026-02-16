@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 import pl.jsyty.linkstash.contracts.auth.AuthExchangeRequest
 import pl.jsyty.linkstash.contracts.auth.AuthSessionMode
 import pl.jsyty.linkstash.contracts.auth.AuthStartResponse
+import pl.jsyty.linkstash.contracts.space.SpacesListResponse
 import pl.jsyty.linkstash.contracts.user.UserDto
 import pl.jsyty.linkstash.server.config.AppConfig
 
@@ -31,6 +32,7 @@ class AuthService(
     private val tokenHasher: TokenHasher,
     private val tokenCipher: TokenCipher,
     private val raindropClient: RaindropClient,
+    private val linkStashBootstrapService: LinkStashBootstrapService,
     private val clock: Clock = Clock.systemUTC()
 ) {
     fun startAuth(redirectUriOverride: String?, codeVerifier: String?): AuthStartResponse {
@@ -97,6 +99,13 @@ class AuthService(
             nowEpochSeconds = now
         )
 
+        withFreshRaindropAccessToken(user.id) { accessToken ->
+            linkStashBootstrapService.ensureBootstrap(
+                userId = user.id,
+                accessToken = accessToken
+            )
+        }
+
         val session = createSession(user.id, now)
         return ExchangeResult(
             user = user,
@@ -111,6 +120,10 @@ class AuthService(
 
         return try {
             val remoteUser = withFreshRaindropAccessToken(userId) { accessToken ->
+                linkStashBootstrapService.ensureBootstrap(
+                    userId = userId,
+                    accessToken = accessToken
+                )
                 raindropClient.fetchCurrentUser(accessToken)
             }
 
@@ -121,6 +134,15 @@ class AuthService(
             ) ?: localUser
         } catch (_: RaindropUpstreamException) {
             localUser
+        }
+    }
+
+    suspend fun listSpaces(userId: String): SpacesListResponse {
+        return withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashBootstrapService.listSpaces(
+                userId = userId,
+                accessToken = accessToken
+            )
         }
     }
 

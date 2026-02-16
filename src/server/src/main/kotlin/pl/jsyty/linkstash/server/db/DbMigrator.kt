@@ -2,8 +2,10 @@ package pl.jsyty.linkstash.server.db
 
 import java.time.Instant
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
@@ -24,6 +26,11 @@ class DbMigrator(
             version = 1,
             name = "bootstrap_schema_v1",
             apply = { bootstrapSchemaV1() }
+        ),
+        SchemaMigration(
+            version = 2,
+            name = "linkstash_config_per_user_v2",
+            apply = { bootstrapSchemaV2() }
         )
     )
 
@@ -86,6 +93,13 @@ class DbMigrator(
                     it[updatedAtEpochSeconds] = now
                 }
             }
+        }
+    }
+
+    private fun bootstrapSchemaV2() {
+        transaction(db = db) {
+            SchemaUtils.createMissingTablesAndColumns(LinkStashConfigTable)
+            LinkStashConfigTable.deleteWhere { LinkStashConfigTable.userId.isNull() }
         }
     }
 }

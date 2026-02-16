@@ -37,6 +37,9 @@ object SessionsTable : Table("sessions") {
 
 object LinkStashConfigTable : Table("linkstash_config") {
     val id = integer("id")
+    val userId = reference("user_id", UsersTable.id, onDelete = ReferenceOption.CASCADE).nullable().uniqueIndex()
+    val rootCollectionId = varchar("root_collection_id", 64).nullable()
+    val defaultSpaceCollectionId = varchar("default_space_collection_id", 64).nullable()
     val rootCollectionTitle = varchar("root_collection_title", 255)
     val defaultSpaceTitle = varchar("default_space_title", 255)
     val createdAtEpochSeconds = long("created_at_epoch_seconds")

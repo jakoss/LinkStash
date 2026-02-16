@@ -51,6 +51,14 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
         raindropHttpClient.close()
     }
 
+    val raindropClient = RaindropClient(config, raindropHttpClient)
+    val linkStashConfigRepository = LinkStashConfigRepository(database)
+    val linkStashBootstrapService = LinkStashBootstrapService(
+        config = config,
+        linkStashConfigRepository = linkStashConfigRepository,
+        raindropClient = raindropClient
+    )
+
     val authService = AuthService(
         config = config,
         oauthStateRepository = OauthStateRepository(database),
@@ -60,7 +68,8 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
         tokenGenerator = TokenGenerator(),
         tokenHasher = TokenHasher(config.tokenHashingSecret),
         tokenCipher = TokenCipher(config.raindropTokenEncryptionKey),
-        raindropClient = RaindropClient(config, raindropHttpClient)
+        raindropClient = raindropClient,
+        linkStashBootstrapService = linkStashBootstrapService
     )
 
     install(StatusPages) {
@@ -178,6 +187,17 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                         )
 
                     call.respond(currentUser)
+                }
+
+                get("/spaces") {
+                    val principal = call.principal<LinkStashPrincipal>()
+                        ?: return@get call.respondApiError(
+                            status = HttpStatusCode.Unauthorized,
+                            code = ApiErrorCode.UNAUTHORIZED,
+                            message = "Authentication required"
+                        )
+
+                    call.respond(authService.listSpaces(principal.userId))
                 }
 
                 post("/auth/logout") {
