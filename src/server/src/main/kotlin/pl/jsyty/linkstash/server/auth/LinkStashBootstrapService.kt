@@ -76,13 +76,33 @@ class LinkStashBootstrapService(
             .toMutableList()
 
         if (spaces.none { it.id == bootstrapResult.defaultSpaceCollectionId }) {
+            val ensuredDefaultSpace = resolveDefaultSpaceCollection(
+                accessToken = accessToken,
+                rootCollectionId = bootstrapResult.rootCollectionId,
+                persistedDefaultSpaceCollectionId = bootstrapResult.defaultSpaceCollectionId,
+                expectedDefaultSpaceTitle = bootstrapResult.defaultSpaceTitle
+            )
+
+            linkStashConfigRepository.upsert(
+                userId = userId,
+                rootCollectionId = bootstrapResult.rootCollectionId,
+                defaultSpaceCollectionId = ensuredDefaultSpace.id,
+                rootCollectionTitle = bootstrapResult.rootCollectionTitle,
+                defaultSpaceTitle = bootstrapResult.defaultSpaceTitle,
+                nowEpochSeconds = clock.instant().epochSecond
+            )
+
             spaces += SpaceDto(
-                id = bootstrapResult.defaultSpaceCollectionId,
-                title = bootstrapResult.defaultSpaceTitle
+                id = ensuredDefaultSpace.id,
+                title = ensuredDefaultSpace.title
             )
         }
 
-        return SpacesListResponse(spaces = spaces)
+        return SpacesListResponse(
+            spaces = spaces
+                .distinctBy { it.id }
+                .sortedBy { it.title.lowercase() }
+        )
     }
 
     private suspend fun resolveRootCollection(

@@ -20,8 +20,7 @@ data class LinksListResponse(
 
 @Serializable
 data class LinkCreateRequest(
-    val url: String,
-    val spaceId: String? = null
+    val url: String
 )
 
 @Serializable

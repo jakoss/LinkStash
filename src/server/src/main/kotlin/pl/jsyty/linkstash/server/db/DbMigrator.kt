@@ -74,8 +74,7 @@ class DbMigrator(
                 UsersTable,
                 RaindropTokensTable,
                 SessionsTable,
-                LinkStashConfigTable,
-                OauthStatesTable
+                LinkStashConfigTable
             )
 
             val hasConfig = LinkStashConfigTable

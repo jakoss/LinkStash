@@ -18,6 +18,16 @@ kotlin {
         }
     }
 
+    listOf(
+        iosArm64(),
+        iosSimulatorArm64()
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "LinkStashContracts"
+            isStatic = true
+        }
+    }
+
     jvm()
 
     js(IR) {
@@ -45,6 +55,9 @@ kotlin {
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
         jsMain.dependencies {
             implementation(libs.ktor.client.js)

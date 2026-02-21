@@ -2,12 +2,17 @@ package pl.jsyty.linkstash.server.auth
 
 import java.time.Clock
 import kotlinx.serialization.Serializable
-import pl.jsyty.linkstash.contracts.auth.AuthExchangeRequest
+import pl.jsyty.linkstash.contracts.auth.AuthRaindropTokenExchangeRequest
 import pl.jsyty.linkstash.contracts.auth.AuthSessionMode
-import pl.jsyty.linkstash.contracts.auth.AuthStartResponse
+import pl.jsyty.linkstash.contracts.link.LinkCreateRequest
+import pl.jsyty.linkstash.contracts.link.LinkDto
+import pl.jsyty.linkstash.contracts.link.LinkMoveRequest
+import pl.jsyty.linkstash.contracts.link.LinksListResponse
+import pl.jsyty.linkstash.contracts.space.SpaceCreateRequest
+import pl.jsyty.linkstash.contracts.space.SpaceDto
+import pl.jsyty.linkstash.contracts.space.SpaceRenameRequest
 import pl.jsyty.linkstash.contracts.space.SpacesListResponse
 import pl.jsyty.linkstash.contracts.user.UserDto
-import pl.jsyty.linkstash.server.config.AppConfig
 
 class ReauthRequiredException(message: String) : RuntimeException(message)
 
@@ -23,8 +28,7 @@ data class LinkStashPrincipal(
 data class LinkStashCookieSession(val token: String)
 
 class AuthService(
-    private val config: AppConfig,
-    private val oauthStateRepository: OauthStateRepository,
+    private val sessionTtlSeconds: Long,
     private val sessionRepository: SessionRepository,
     private val userRepository: UserRepository,
     private val raindropTokenRepository: RaindropTokenRepository,
@@ -33,60 +37,24 @@ class AuthService(
     private val tokenCipher: TokenCipher,
     private val raindropClient: RaindropClient,
     private val linkStashBootstrapService: LinkStashBootstrapService,
+    private val linkStashDomainService: LinkStashDomainService,
     private val clock: Clock = Clock.systemUTC()
 ) {
-    fun startAuth(redirectUriOverride: String?, codeVerifier: String?): AuthStartResponse {
-        val redirectUri = redirectUriOverride?.takeIf { it.isNotBlank() }
-            ?: config.raindropDefaultRedirectUri
-        val codeVerifierHash = codeVerifier
-            ?.takeIf { it.isNotBlank() }
-            ?.let(tokenHasher::hash)
+    suspend fun exchangeRaindropToken(request: AuthRaindropTokenExchangeRequest): ExchangeResult {
+        val accessToken = request.accessToken.trim()
+            .removePrefix("Bearer ")
+            .removePrefix("bearer ")
+            .trim()
 
-        val now = nowEpochSeconds()
-        val state = tokenGenerator.randomUrlSafeToken(sizeBytes = 24)
-        oauthStateRepository.create(
-            state = state,
-            redirectUri = redirectUri,
-            codeVerifierHash = codeVerifierHash,
-            nowEpochSeconds = now,
-            expiresAtEpochSeconds = now + config.oauthStateTtlSeconds
-        )
-
-        return AuthStartResponse(
-            url = raindropClient.buildAuthorizeUrl(state = state, redirectUri = redirectUri)
-        )
-    }
-
-    suspend fun exchangeCode(request: AuthExchangeRequest): ExchangeResult {
-        if (request.code.isBlank()) throw AuthValidationException("OAuth code is required")
-        if (request.state.isBlank()) throw AuthValidationException("OAuth state is required")
-        if (request.redirectUri.isBlank()) throw AuthValidationException("OAuth redirectUri is required")
-
-        val codeVerifierHash = request.codeVerifier
-            ?.takeIf { it.isNotBlank() }
-            ?.let(tokenHasher::hash)
-
-        val isStateValid = oauthStateRepository.consumeIfValid(
-            state = request.state,
-            redirectUri = request.redirectUri,
-            codeVerifierHash = codeVerifierHash,
-            nowEpochSeconds = nowEpochSeconds()
-        )
-
-        if (!isStateValid) {
-            throw AuthValidationException("OAuth state is invalid or expired")
+        if (accessToken.isBlank()) {
+            throw AuthValidationException("Raindrop access token is required")
         }
 
-        val tokenResponse = raindropClient.exchangeCodeForTokens(
-            code = request.code,
-            redirectUri = request.redirectUri,
-            codeVerifier = request.codeVerifier
-        )
-
         val now = nowEpochSeconds()
-        val raindropUser = raindropClient.fetchCurrentUser(tokenResponse.accessToken)
+        val raindropUser = raindropClient.fetchCurrentUser(accessToken)
         val raindropUserId = raindropUser.stableId()
             ?: throw RaindropUpstreamException("Raindrop user response missing user id")
+
         val user = userRepository.upsertByRaindropUserId(
             raindropUserId = raindropUserId,
             displayName = raindropUser.displayName(),
@@ -95,14 +63,14 @@ class AuthService(
 
         persistRaindropTokens(
             userId = user.id,
-            tokenResponse = tokenResponse,
+            tokenResponse = RaindropTokenResponse(accessToken = accessToken),
             nowEpochSeconds = now
         )
 
-        withFreshRaindropAccessToken(user.id) { accessToken ->
+        withFreshRaindropAccessToken(user.id) { freshAccessToken ->
             linkStashBootstrapService.ensureBootstrap(
                 userId = user.id,
-                accessToken = accessToken
+                accessToken = freshAccessToken
             )
         }
 
@@ -146,6 +114,80 @@ class AuthService(
         }
     }
 
+    suspend fun createSpace(userId: String, request: SpaceCreateRequest): SpaceDto {
+        return withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.createSpace(
+                userId = userId,
+                accessToken = accessToken,
+                request = request
+            )
+        }
+    }
+
+    suspend fun renameSpace(userId: String, spaceId: String, request: SpaceRenameRequest): SpaceDto {
+        return withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.renameSpace(
+                userId = userId,
+                accessToken = accessToken,
+                spaceId = spaceId,
+                request = request
+            )
+        }
+    }
+
+    suspend fun deleteSpace(userId: String, spaceId: String) {
+        withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.deleteSpace(
+                userId = userId,
+                accessToken = accessToken,
+                spaceId = spaceId
+            )
+        }
+    }
+
+    suspend fun listLinks(userId: String, spaceId: String, cursor: String?): LinksListResponse {
+        return withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.listLinks(
+                userId = userId,
+                accessToken = accessToken,
+                spaceId = spaceId,
+                cursor = cursor
+            )
+        }
+    }
+
+    suspend fun createLink(userId: String, spaceId: String, request: LinkCreateRequest): LinkDto {
+        return withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.createLink(
+                userId = userId,
+                accessToken = accessToken,
+                spaceId = spaceId,
+                request = request
+            )
+        }
+    }
+
+    suspend fun moveLink(userId: String, linkId: String, request: LinkMoveRequest): LinkDto {
+        return withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.moveLink(
+                userId = userId,
+                accessToken = accessToken,
+                linkId = linkId,
+                request = request
+            )
+        }
+    }
+
+    suspend fun deleteLink(userId: String, linkId: String) {
+        withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.deleteLink(
+                userId = userId,
+                accessToken = accessToken,
+                linkId = linkId
+            )
+        }
+    }
+
     fun resolvePrincipal(token: String): LinkStashPrincipal? {
         if (token.isBlank()) return null
 
@@ -170,7 +212,7 @@ class AuthService(
 
     private fun createSession(userId: String, nowEpochSeconds: Long): CreatedSession {
         val token = tokenGenerator.randomUrlSafeToken(sizeBytes = 32)
-        val expiresAtEpochSeconds = nowEpochSeconds + config.sessionTtlSeconds
+        val expiresAtEpochSeconds = nowEpochSeconds + sessionTtlSeconds
 
         val persistedSession = sessionRepository.create(
             userId = userId,
@@ -208,59 +250,21 @@ class AuthService(
         userId: String,
         block: suspend (String) -> T
     ): T {
-        var tokens = loadAndMaybeRefreshTokens(userId)
+        val tokens = loadTokens(userId)
 
         try {
             return block(tokens.accessToken)
         } catch (_: RaindropUnauthorizedException) {
-            val refreshToken = tokens.refreshToken
-                ?: reauthRequired(userId, "Raindrop access token expired and no refresh token is available")
-
-            val refreshed = refreshTokens(userId, refreshToken)
-            tokens = refreshed
-            return block(tokens.accessToken)
+            reauthRequired(userId, "Raindrop access token is no longer valid")
         }
     }
 
-    private suspend fun loadAndMaybeRefreshTokens(userId: String): PlainRaindropTokens {
+    private suspend fun loadTokens(userId: String): PlainRaindropTokens {
         val storedTokens = raindropTokenRepository.findByUserId(userId)
             ?: reauthRequired(userId, "Raindrop tokens were not found for this user")
 
-        val plainTokens = PlainRaindropTokens(
-            accessToken = tokenCipher.decrypt(storedTokens.accessTokenEncrypted),
-            refreshToken = storedTokens.refreshTokenEncrypted?.let(tokenCipher::decrypt),
-            expiresAtEpochSeconds = storedTokens.expiresAtEpochSeconds,
-            scope = storedTokens.scope
-        )
-
-        val now = nowEpochSeconds()
-        val isNearExpiry = plainTokens.expiresAtEpochSeconds
-            ?.let { it <= now + 60L }
-            ?: false
-
-        if (!isNearExpiry) return plainTokens
-
-        val refreshToken = plainTokens.refreshToken
-            ?: reauthRequired(userId, "Raindrop access token expired and no refresh token is available")
-
-        return refreshTokens(userId, refreshToken)
-    }
-
-    private suspend fun refreshTokens(userId: String, refreshToken: String): PlainRaindropTokens {
-        val refreshedTokens = try {
-            raindropClient.refreshAccessToken(refreshToken)
-        } catch (error: Throwable) {
-            reauthRequired(userId, "Raindrop token refresh failed: ${error.message ?: "unknown error"}")
-        }
-
-        val now = nowEpochSeconds()
-        persistRaindropTokens(userId, refreshedTokens, now)
-
         return PlainRaindropTokens(
-            accessToken = refreshedTokens.accessToken,
-            refreshToken = refreshedTokens.refreshToken ?: refreshToken,
-            expiresAtEpochSeconds = refreshedTokens.expiresInSeconds?.let { now + it },
-            scope = refreshedTokens.scope
+            accessToken = tokenCipher.decrypt(storedTokens.accessTokenEncrypted)
         )
     }
 
@@ -287,9 +291,6 @@ class AuthService(
     )
 
     private data class PlainRaindropTokens(
-        val accessToken: String,
-        val refreshToken: String?,
-        val expiresAtEpochSeconds: Long?,
-        val scope: String?
+        val accessToken: String
     )
 }

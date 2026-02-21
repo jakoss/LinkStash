@@ -1,10 +1,9 @@
 # LinkStash E2E (Playwright + Bun)
 
-This folder contains the E2E suite for LinkStash auth flow using Playwright.
+This folder contains the E2E suite for LinkStash token auth flow using Playwright.
 
 ## Scope
-- Raindrop OAuth start (`/v1/auth/raindrop/start`)
-- OAuth code exchange (`/v1/auth/raindrop/exchange`)
+- Raindrop token exchange (`/v1/auth/raindrop/token`)
 - Authenticated `GET /v1/me`
 - Logout (`POST /v1/auth/logout`)
 - Session revocation check (`GET /v1/me` returns `401` after logout)
@@ -12,9 +11,8 @@ This folder contains the E2E suite for LinkStash auth flow using Playwright.
 ## Prerequisites
 1. Start API server from `src/`:
    - `./gradlew :server:runServerLocal`
-2. Configure a Raindrop OAuth redirect URI matching your test env (default below).
-3. In `tests/e2e`, create `.env` from `.env.example` and set credentials.
-4. If you want to use installed Chrome (no Playwright browser download), set:
+2. In `tests/e2e`, create `.env` from `.env.example` and set a Raindrop API token.
+3. If you want to use installed Chrome (no Playwright browser download), set:
    - `E2E_BROWSER_CHANNEL=chrome`
 
 ## Install

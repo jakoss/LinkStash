@@ -4,22 +4,14 @@ import kotlinx.serialization.Serializable
 import pl.jsyty.linkstash.contracts.user.UserDto
 
 @Serializable
-data class AuthStartResponse(
-    val url: String
-)
-
-@Serializable
 enum class AuthSessionMode {
     COOKIE,
     BEARER
 }
 
 @Serializable
-data class AuthExchangeRequest(
-    val code: String,
-    val state: String,
-    val redirectUri: String,
-    val codeVerifier: String? = null,
+data class AuthRaindropTokenExchangeRequest(
+    val accessToken: String,
     val sessionMode: AuthSessionMode = AuthSessionMode.COOKIE
 )
 

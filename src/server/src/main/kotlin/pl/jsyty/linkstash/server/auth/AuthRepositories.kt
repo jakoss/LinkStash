@@ -11,7 +11,6 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
 import pl.jsyty.linkstash.server.db.LinkStashConfigTable
 import pl.jsyty.linkstash.contracts.user.UserDto
-import pl.jsyty.linkstash.server.db.OauthStatesTable
 import pl.jsyty.linkstash.server.db.RaindropTokensTable
 import pl.jsyty.linkstash.server.db.SessionsTable
 import pl.jsyty.linkstash.server.db.UsersTable
@@ -38,55 +37,6 @@ data class StoredLinkStashConfig(
     val rootCollectionTitle: String,
     val defaultSpaceTitle: String
 )
-
-class OauthStateRepository(private val db: Database) {
-    fun create(
-        state: String,
-        redirectUri: String,
-        codeVerifierHash: String?,
-        nowEpochSeconds: Long,
-        expiresAtEpochSeconds: Long
-    ) {
-        transaction(db = db) {
-            OauthStatesTable.insert {
-                it[OauthStatesTable.state] = state
-                it[OauthStatesTable.redirectUri] = redirectUri
-                it[OauthStatesTable.codeVerifierHash] = codeVerifierHash
-                it[createdAtEpochSeconds] = nowEpochSeconds
-                it[OauthStatesTable.expiresAtEpochSeconds] = expiresAtEpochSeconds
-                it[consumedAtEpochSeconds] = null
-            }
-        }
-    }
-
-    fun consumeIfValid(
-        state: String,
-        redirectUri: String,
-        codeVerifierHash: String?,
-        nowEpochSeconds: Long
-    ): Boolean {
-        return transaction(db = db) {
-            val row = OauthStatesTable.selectAll()
-                .where { OauthStatesTable.state eq state }
-                .limit(1)
-                .singleOrNull()
-                ?: return@transaction false
-
-            if (row[OauthStatesTable.consumedAtEpochSeconds] != null) return@transaction false
-            if (row[OauthStatesTable.expiresAtEpochSeconds] < nowEpochSeconds) return@transaction false
-            if (row[OauthStatesTable.redirectUri] != redirectUri) return@transaction false
-
-            val expectedCodeVerifierHash = row[OauthStatesTable.codeVerifierHash]
-            if (expectedCodeVerifierHash != null && expectedCodeVerifierHash != codeVerifierHash) return@transaction false
-
-            OauthStatesTable.update({ OauthStatesTable.state eq state }) {
-                it[consumedAtEpochSeconds] = nowEpochSeconds
-            }
-
-            true
-        }
-    }
-}
 
 class SessionRepository(private val db: Database) {
     fun create(

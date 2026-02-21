@@ -16,19 +16,19 @@ Out of scope:
 - Caching/ETags/rate-limit optimizations (later)
 
 ## Tasks (checklist)
-- [ ] Spaces:
-  - [ ] `GET /v1/spaces`
-  - [ ] `POST /v1/spaces`
-  - [ ] `PATCH /v1/spaces/{spaceId}`
-  - [ ] `DELETE /v1/spaces/{spaceId}`
-- [ ] Links:
-  - [ ] `GET /v1/spaces/{spaceId}/links` (newest-first + pagination)
-  - [ ] `POST /v1/spaces/{spaceId}/links`
-  - [ ] `PATCH /v1/links/{linkId}` (move)
-  - [ ] `DELETE /v1/links/{linkId}`
-- [ ] Guardrails:
-  - [ ] Verify space is under LinkStash root before listing/creating
-  - [ ] Verify link belongs to LinkStash root subtree before moving/deleting
+- [x] Spaces:
+  - [x] `GET /v1/spaces`
+  - [x] `POST /v1/spaces`
+  - [x] `PATCH /v1/spaces/{spaceId}`
+  - [x] `DELETE /v1/spaces/{spaceId}`
+- [x] Links:
+  - [x] `GET /v1/spaces/{spaceId}/links` (newest-first + pagination)
+  - [x] `POST /v1/spaces/{spaceId}/links`
+  - [x] `PATCH /v1/links/{linkId}` (move)
+  - [x] `DELETE /v1/links/{linkId}`
+- [x] Guardrails:
+  - [x] Verify space is under LinkStash root before listing/creating
+  - [x] Verify link belongs to LinkStash root subtree before moving/deleting
 
 ## Deliverables
 - End-to-end domain flow works against Raindrop:
@@ -38,3 +38,6 @@ Out of scope:
 - API never touches non-LinkStash collections for a user.
 - Error responses are stable and parseable by clients.
 
+## Validation Notes
+- 2026-02-21: Implementation compiles with `./gradlew :contracts:compileKotlinMetadata :server:compileKotlin`.
+- Pending: run a live Raindrop flow to fully validate acceptance end-to-end (create space → add link → move link → delete link → delete space).

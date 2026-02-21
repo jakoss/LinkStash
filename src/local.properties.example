@@ -13,7 +13,3 @@ server.env.RAINDROP_TOKEN_ENCRYPTION_KEY=local-dev-raindrop-encryption-key-chang
 server.env.LINKSTASH_ROOT_COLLECTION_TITLE=LinkStash
 server.env.LINKSTASH_DEFAULT_SPACE_TITLE=Inbox
 server.env.CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080
-
-# Optional auth env vars for later phases
-server.env.RAINDROP_CLIENT_ID=
-server.env.RAINDROP_CLIENT_SECRET=

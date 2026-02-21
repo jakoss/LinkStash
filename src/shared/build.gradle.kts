@@ -41,6 +41,8 @@ kotlin {
 
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     dependencies {
+        implementation(projects.contracts)
+
         implementation(libs.compose.runtime)
         implementation(libs.compose.foundation)
         implementation(libs.compose.material3)
@@ -52,6 +54,7 @@ kotlin {
         implementation(libs.androidx.nav3.ui)
         implementation(libs.androidx.nav3.viewmodel)
 
+        implementation(libs.kotlinx.coroutines.core)
         implementation(libs.kotlinx.datetime)
         implementation(libs.kotlinx.serialization)
 
@@ -69,5 +72,4 @@ kotlin {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
-    androidMainImplementation(libs.convex)
 }

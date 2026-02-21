@@ -3,16 +3,16 @@ package pl.jsyty.linkstash.server.auth
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.accept
-import io.ktor.client.request.forms.FormDataContent
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.Parameters
-import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.ContentConvertException
@@ -23,7 +23,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import pl.jsyty.linkstash.server.config.AppConfig
 
@@ -102,63 +104,40 @@ data class RaindropCollectionParentRef(
     }
 }
 
+@Serializable
+data class RaindropRaindropPayload(
+    @SerialName("_id")
+    val id: Long? = null,
+    val link: String? = null,
+    val title: String? = null,
+    val excerpt: String? = null,
+    val created: String? = null,
+    val collection: JsonElement? = null,
+    @SerialName("collection.\$id")
+    val collectionId: Long? = null
+) {
+    fun stableId(): String? {
+        return id?.toString()
+    }
+
+    fun stableCollectionId(): String? {
+        collectionId?.toString()?.let { return it }
+
+        val rawCollection = collection ?: return null
+        return when (rawCollection) {
+            is JsonObject -> rawCollection["\$id"]
+                ?.jsonPrimitive
+                ?.contentOrNull
+            is JsonPrimitive -> rawCollection.contentOrNull
+            else -> null
+        }?.takeIf { it.isNotBlank() }
+    }
+}
+
 class RaindropClient(
     private val config: AppConfig,
     private val httpClient: HttpClient
 ) {
-    fun buildAuthorizeUrl(state: String, redirectUri: String): String {
-        return URLBuilder(config.raindropAuthorizeUrl).apply {
-            parameters.append("client_id", config.raindropClientId)
-            parameters.append("redirect_uri", redirectUri)
-            parameters.append("response_type", "code")
-            parameters.append("state", state)
-        }.buildString()
-    }
-
-    suspend fun exchangeCodeForTokens(
-        code: String,
-        redirectUri: String,
-        codeVerifier: String?
-    ): RaindropTokenResponse {
-        val response = httpClient.post(config.raindropTokenUrl) {
-            contentType(ContentType.Application.FormUrlEncoded)
-            accept(ContentType.Application.Json)
-            setBody(
-                FormDataContent(
-                    Parameters.build {
-                        append("client_id", config.raindropClientId)
-                        append("client_secret", config.raindropClientSecret)
-                        append("grant_type", "authorization_code")
-                        append("code", code)
-                        append("redirect_uri", redirectUri)
-                        codeVerifier?.takeIf { it.isNotBlank() }?.let { append("code_verifier", it) }
-                    }
-                )
-            )
-        }
-
-        return parseTokenResponse(response.status, response.bodyAsTextSafely(), "code exchange")
-    }
-
-    suspend fun refreshAccessToken(refreshToken: String): RaindropTokenResponse {
-        val response = httpClient.post(config.raindropTokenUrl) {
-            contentType(ContentType.Application.FormUrlEncoded)
-            accept(ContentType.Application.Json)
-            setBody(
-                FormDataContent(
-                    Parameters.build {
-                        append("client_id", config.raindropClientId)
-                        append("client_secret", config.raindropClientSecret)
-                        append("grant_type", "refresh_token")
-                        append("refresh_token", refreshToken)
-                    }
-                )
-            )
-        }
-
-        return parseTokenResponse(response.status, response.bodyAsTextSafely(), "token refresh")
-    }
-
     suspend fun fetchCurrentUser(accessToken: String): RaindropUserPayload {
         val response = httpClient.get("${config.raindropApiBaseUrl}/user") {
             accept(ContentType.Application.Json)
@@ -261,7 +240,12 @@ class RaindropClient(
         val requestBody = buildJsonObject {
             put("title", title)
             parentCollectionId?.takeIf { it.isNotBlank() }?.let { parentId ->
-                put("parent.\$id", parentId.toRaindropCollectionIdPrimitive())
+                put(
+                    "parent",
+                    buildJsonObject {
+                        put("\$id", parentId.toRaindropCollectionIdPrimitive())
+                    }
+                )
             }
         }
 
@@ -287,21 +271,216 @@ class RaindropClient(
             ?: throw RaindropUpstreamException("Raindrop collection creation response missing collection payload")
     }
 
-    private fun parseTokenResponse(status: HttpStatusCode, responseBody: String, action: String): RaindropTokenResponse {
-        if (status == HttpStatusCode.Unauthorized) {
-            throw RaindropUnauthorizedException("Raindrop $action failed with unauthorized status")
+    suspend fun updateCollection(
+        accessToken: String,
+        collectionId: String,
+        title: String
+    ): RaindropCollectionPayload {
+        val requestBody = buildJsonObject {
+            put("title", title)
         }
 
-        if (!status.isSuccess()) {
-            throw RaindropUpstreamException("Raindrop $action failed (${status.value}): $responseBody")
+        val response = httpClient.put("${config.raindropApiBaseUrl}/collection/$collectionId") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            setBody(requestBody)
         }
 
-        return try {
-            LinkStashJsonReader.decodeRaindropTokenResponse(responseBody)
-        } catch (error: Exception) {
-            throw RaindropUpstreamException("Raindrop $action response could not be parsed")
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw RaindropUnauthorizedException()
         }
+
+        if (response.status == HttpStatusCode.NotFound) {
+            throw RaindropUpstreamException("Raindrop collection was not found")
+        }
+
+        val responseBody = response.bodyAsTextSafely()
+        if (!response.status.isSuccess()) {
+            throw RaindropUpstreamException(
+                "Raindrop collection update failed (${response.status.value}): $responseBody"
+            )
+        }
+
+        return LinkStashJsonReader.decodeRaindropCollection(responseBody)
+            ?: throw RaindropUpstreamException("Raindrop collection update response missing collection payload")
     }
+
+    suspend fun deleteCollection(
+        accessToken: String,
+        collectionId: String
+    ): Boolean {
+        val response = httpClient.delete("${config.raindropApiBaseUrl}/collection/$collectionId") {
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw RaindropUnauthorizedException()
+        }
+
+        if (response.status == HttpStatusCode.NotFound) {
+            return false
+        }
+
+        val responseBody = response.bodyAsTextSafely()
+        if (!response.status.isSuccess()) {
+            throw RaindropUpstreamException(
+                "Raindrop collection deletion failed (${response.status.value}): $responseBody"
+            )
+        }
+
+        return true
+    }
+
+    suspend fun listRaindrops(
+        accessToken: String,
+        collectionId: String,
+        page: Int,
+        perPage: Int
+    ): List<RaindropRaindropPayload> {
+        val response = httpClient.get("${config.raindropApiBaseUrl}/raindrops/$collectionId") {
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            parameter("page", page)
+            parameter("perpage", perPage)
+            parameter("sort", "-created")
+        }
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw RaindropUnauthorizedException()
+        }
+
+        val responseBody = response.bodyAsTextSafely()
+        if (!response.status.isSuccess()) {
+            throw RaindropUpstreamException(
+                "Raindrop raindrops list failed (${response.status.value}): $responseBody"
+            )
+        }
+
+        return LinkStashJsonReader.decodeRaindrops(responseBody)
+    }
+
+    suspend fun createRaindrop(
+        accessToken: String,
+        collectionId: String,
+        url: String
+    ): RaindropRaindropPayload {
+        val requestBody = buildJsonObject {
+            put("link", url)
+            put("collection.\$id", collectionId.toRaindropCollectionIdPrimitive())
+            put("pleaseParse", buildJsonObject {})
+        }
+
+        val response = httpClient.post("${config.raindropApiBaseUrl}/raindrop") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            setBody(requestBody)
+        }
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw RaindropUnauthorizedException()
+        }
+
+        val responseBody = response.bodyAsTextSafely()
+        if (!response.status.isSuccess()) {
+            throw RaindropUpstreamException(
+                "Raindrop raindrop creation failed (${response.status.value}): $responseBody"
+            )
+        }
+
+        return LinkStashJsonReader.decodeRaindrop(responseBody)
+            ?: throw RaindropUpstreamException("Raindrop creation response missing item payload")
+    }
+
+    suspend fun getRaindropById(accessToken: String, raindropId: String): RaindropRaindropPayload? {
+        val response = httpClient.get("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw RaindropUnauthorizedException()
+        }
+
+        if (response.status == HttpStatusCode.NotFound) {
+            return null
+        }
+
+        val responseBody = response.bodyAsTextSafely()
+        if (!response.status.isSuccess()) {
+            throw RaindropUpstreamException(
+                "Raindrop raindrop lookup failed (${response.status.value}): $responseBody"
+            )
+        }
+
+        return LinkStashJsonReader.decodeRaindrop(responseBody)
+            ?: throw RaindropUpstreamException("Raindrop lookup response missing item payload")
+    }
+
+    suspend fun moveRaindropToCollection(
+        accessToken: String,
+        raindropId: String,
+        collectionId: String
+    ): RaindropRaindropPayload {
+        val requestBody = buildJsonObject {
+            put("collection.\$id", collectionId.toRaindropCollectionIdPrimitive())
+        }
+
+        val response = httpClient.put("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+            setBody(requestBody)
+        }
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw RaindropUnauthorizedException()
+        }
+
+        if (response.status == HttpStatusCode.NotFound) {
+            throw RaindropUpstreamException("Raindrop raindrop was not found")
+        }
+
+        val responseBody = response.bodyAsTextSafely()
+        if (!response.status.isSuccess()) {
+            throw RaindropUpstreamException(
+                "Raindrop raindrop move failed (${response.status.value}): $responseBody"
+            )
+        }
+
+        return LinkStashJsonReader.decodeRaindrop(responseBody)
+            ?: throw RaindropUpstreamException("Raindrop move response missing item payload")
+    }
+
+    suspend fun deleteRaindrop(
+        accessToken: String,
+        raindropId: String
+    ): Boolean {
+        val response = httpClient.delete("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
+            accept(ContentType.Application.Json)
+            header(HttpHeaders.Authorization, "Bearer $accessToken")
+        }
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw RaindropUnauthorizedException()
+        }
+
+        if (response.status == HttpStatusCode.NotFound) {
+            return false
+        }
+
+        val responseBody = response.bodyAsTextSafely()
+        if (!response.status.isSuccess()) {
+            throw RaindropUpstreamException(
+                "Raindrop raindrop deletion failed (${response.status.value}): $responseBody"
+            )
+        }
+
+        return true
+    }
+
 }
 
 private suspend fun io.ktor.client.statement.HttpResponse.bodyAsTextSafely(): String {
@@ -310,10 +489,6 @@ private suspend fun io.ktor.client.statement.HttpResponse.bodyAsTextSafely(): St
 
 private object LinkStashJsonReader {
     private val json = pl.jsyty.linkstash.contracts.LinkStashJson.instance
-
-    fun decodeRaindropTokenResponse(raw: String): RaindropTokenResponse {
-        return json.decodeFromString(RaindropTokenResponse.serializer(), raw)
-    }
 
     fun decodeRaindropCollection(raw: String): RaindropCollectionPayload? {
         val root = parseJsonObject(raw) ?: return null
@@ -332,6 +507,23 @@ private object LinkStashJsonReader {
         }
     }
 
+    fun decodeRaindrop(raw: String): RaindropRaindropPayload? {
+        val root = parseJsonObject(raw) ?: return null
+        val payloadElement = root["item"] ?: root
+        return decodeRaindropPayload(payloadElement)
+    }
+
+    fun decodeRaindrops(raw: String): List<RaindropRaindropPayload> {
+        val root = parseJsonObject(raw) ?: return emptyList()
+        val items = root["items"] ?: return emptyList()
+
+        return when (items) {
+            is JsonArray -> items.mapNotNull(::decodeRaindropPayload)
+            is JsonObject -> items.values.mapNotNull(::decodeRaindropPayload)
+            else -> emptyList()
+        }
+    }
+
     private fun parseJsonObject(raw: String): JsonObject? {
         return runCatching { json.decodeFromString(JsonElement.serializer(), raw) }
             .getOrNull() as? JsonObject
@@ -340,6 +532,12 @@ private object LinkStashJsonReader {
     private fun decodeCollectionPayload(element: JsonElement): RaindropCollectionPayload? {
         return runCatching {
             json.decodeFromJsonElement(RaindropCollectionPayload.serializer(), element)
+        }.getOrNull()
+    }
+
+    private fun decodeRaindropPayload(element: JsonElement): RaindropRaindropPayload? {
+        return runCatching {
+            json.decodeFromJsonElement(RaindropRaindropPayload.serializer(), element)
         }.getOrNull()
     }
 }

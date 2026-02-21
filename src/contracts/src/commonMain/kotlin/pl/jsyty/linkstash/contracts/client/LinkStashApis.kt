@@ -7,9 +7,8 @@ import de.jensklingenberg.ktorfit.http.PATCH
 import de.jensklingenberg.ktorfit.http.POST
 import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
-import pl.jsyty.linkstash.contracts.auth.AuthExchangeRequest
 import pl.jsyty.linkstash.contracts.auth.AuthExchangeResponse
-import pl.jsyty.linkstash.contracts.auth.AuthStartResponse
+import pl.jsyty.linkstash.contracts.auth.AuthRaindropTokenExchangeRequest
 import pl.jsyty.linkstash.contracts.link.LinkCreateRequest
 import pl.jsyty.linkstash.contracts.link.LinkDto
 import pl.jsyty.linkstash.contracts.link.LinkMoveRequest
@@ -21,14 +20,8 @@ import pl.jsyty.linkstash.contracts.space.SpacesListResponse
 import pl.jsyty.linkstash.contracts.user.UserDto
 
 interface AuthApi {
-    @GET("auth/raindrop/start")
-    suspend fun start(
-        @Query("redirectUri") redirectUri: String? = null,
-        @Query("codeVerifier") codeVerifier: String? = null
-    ): AuthStartResponse
-
-    @POST("auth/raindrop/exchange")
-    suspend fun exchange(@Body request: AuthExchangeRequest): AuthExchangeResponse
+    @POST("auth/raindrop/token")
+    suspend fun exchangeRaindropToken(@Body request: AuthRaindropTokenExchangeRequest): AuthExchangeResponse
 
     @POST("auth/logout")
     suspend fun logout(): Unit
@@ -55,13 +48,19 @@ interface SpacesApi {
 }
 
 interface LinksApi {
-    @GET("links")
-    suspend fun list(@Query("cursor") cursor: String? = null): LinksListResponse
+    @GET("spaces/{spaceId}/links")
+    suspend fun list(
+        @Path("spaceId") spaceId: String,
+        @Query("cursor") cursor: String? = null
+    ): LinksListResponse
 
-    @POST("links")
-    suspend fun create(@Body request: LinkCreateRequest): LinkDto
+    @POST("spaces/{spaceId}/links")
+    suspend fun create(
+        @Path("spaceId") spaceId: String,
+        @Body request: LinkCreateRequest
+    ): LinkDto
 
-    @PATCH("links/{linkId}/move")
+    @PATCH("links/{linkId}")
     suspend fun move(
         @Path("linkId") linkId: String,
         @Body request: LinkMoveRequest

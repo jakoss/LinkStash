@@ -48,17 +48,6 @@ object LinkStashConfigTable : Table("linkstash_config") {
     override val primaryKey = PrimaryKey(id)
 }
 
-object OauthStatesTable : Table("oauth_states") {
-    val state = varchar("state", 128)
-    val codeVerifierHash = varchar("code_verifier_hash", 255).nullable()
-    val redirectUri = text("redirect_uri")
-    val createdAtEpochSeconds = long("created_at_epoch_seconds")
-    val expiresAtEpochSeconds = long("expires_at_epoch_seconds")
-    val consumedAtEpochSeconds = long("consumed_at_epoch_seconds").nullable()
-
-    override val primaryKey = PrimaryKey(state)
-}
-
 object SchemaMigrationsTable : Table("schema_migrations") {
     val version = integer("version")
     val name = varchar("name", 255)

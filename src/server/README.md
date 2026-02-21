@@ -9,9 +9,6 @@ DB_URL="jdbc:sqlite:/absolute/path/to/linkstash.db" \
 SESSION_SECRET="change-me" \
 TOKEN_HASHING_SECRET="change-me-too" \
 RAINDROP_TOKEN_ENCRYPTION_KEY="change-me-encryption-key" \
-RAINDROP_CLIENT_ID="your-raindrop-client-id" \
-RAINDROP_CLIENT_SECRET="your-raindrop-client-secret" \
-RAINDROP_REDIRECT_URI="http://localhost:8080/v1/auth/raindrop/callback" \
 LINKSTASH_ROOT_COLLECTION_TITLE="LinkStash" \
 LINKSTASH_DEFAULT_SPACE_TITLE="Inbox" \
 ./gradlew :server:run
@@ -36,11 +33,16 @@ Optional CORS override:
 - `CORS_ALLOWED_ORIGINS` as comma-separated origins
   - example: `http://localhost:5173,http://127.0.0.1:5173`
 
-## Phase 4 auth/bootstrap endpoints
+## Auth + domain endpoints
 
-- `GET /v1/auth/raindrop/start` (supports optional `redirectUri` and `codeVerifier` query params)
-- `POST /v1/auth/raindrop/start` (same behavior as GET)
-- `POST /v1/auth/raindrop/exchange`
+- `POST /v1/auth/raindrop/token` (expects `{ "accessToken": "...", "sessionMode": "BEARER" }`)
 - `GET /v1/me` (requires cookie or bearer auth)
-- `GET /v1/spaces` (requires cookie or bearer auth; scoped under LinkStash root)
 - `POST /v1/auth/logout` (requires cookie or bearer auth)
+- `GET /v1/spaces` (requires cookie or bearer auth; scoped under LinkStash root)
+- `POST /v1/spaces`
+- `PATCH /v1/spaces/{spaceId}`
+- `DELETE /v1/spaces/{spaceId}`
+- `GET /v1/spaces/{spaceId}/links?cursor=...`
+- `POST /v1/spaces/{spaceId}/links`
+- `PATCH /v1/links/{linkId}` (move with `{ \"spaceId\": \"...\" }`)
+- `DELETE /v1/links/{linkId}`
