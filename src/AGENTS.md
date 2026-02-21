@@ -37,3 +37,11 @@
 - Keep the Android share-to-save flow simple and fast.
 - Mirror core product flows: add link to default space, move between spaces, and delete links (to Raindrop Trash).
 - Keep new APIs and models aligned with contracts that will live in `contracts/`.
+
+## Backend Test Maintenance
+- Server API integration tests live in `server/src/test/kotlin/pl/jsyty/linkstash/server/api/`.
+- Any backend change (`server/` code, API routes, contracts used by backend) must include corresponding test maintenance:
+  - add tests for new behavior
+  - update tests for changed behavior
+  - delete tests for removed behavior
+- A backend change is not complete unless the relevant `:server:test` coverage is updated to match the new behavior.
