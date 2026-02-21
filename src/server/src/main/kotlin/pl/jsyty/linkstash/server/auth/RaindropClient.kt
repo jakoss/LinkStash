@@ -121,16 +121,19 @@ data class RaindropRaindropPayload(
     }
 
     fun stableCollectionId(): String? {
-        collectionId?.toString()?.let { return it }
-
-        val rawCollection = collection ?: return null
-        return when (rawCollection) {
+        val fromCollectionObject = when (val rawCollection = collection) {
             is JsonObject -> rawCollection["\$id"]
                 ?.jsonPrimitive
                 ?.contentOrNull
             is JsonPrimitive -> rawCollection.contentOrNull
             else -> null
         }?.takeIf { it.isNotBlank() }
+
+        if (fromCollectionObject != null) {
+            return fromCollectionObject
+        }
+
+        return collectionId?.toString()
     }
 }
 

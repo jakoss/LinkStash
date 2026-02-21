@@ -1,5 +1,6 @@
 import java.io.File
 import java.util.Properties
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -37,6 +38,10 @@ dependencies {
     implementation(libs.sqlite.jdbc)
 
     implementation(libs.logback.classic)
+
+    testImplementation(libs.ktor.server.testHost)
+    testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.junit)
 }
 
 tasks.register<JavaExec>("runServerLocal") {
@@ -55,6 +60,28 @@ tasks.register<JavaExec>("runServerLocal") {
             logger.lifecycle("Loaded {} env var(s) from local.properties for runServerLocal.", env.size)
             environment(env)
         }
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnit()
+
+    val configuredPath = providers.gradleProperty("apiTestEnvFile")
+        .orNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: ".env.api-test"
+    val envFile = project.file(configuredPath)
+    val env = loadEnvFile(envFile)
+    if (env.isEmpty()) {
+        logger.lifecycle("No API test env vars found in {}.", envFile)
+    } else {
+        logger.lifecycle("Loaded {} API test env var(s) from {}.", env.size, envFile)
+        environment(env)
+
+        env["API_TEST_RAINDROP_TOKEN"]
+            ?.takeIf { it.isNotBlank() }
+            ?.let { systemProperty("api.test.raindrop.token", it) }
     }
 }
 
@@ -78,4 +105,25 @@ fun loadServerEnvFromLocalProperties(localPropertiesFile: File): Map<String, Str
         .filter { (name, value) -> name.matches(envNameRegex) && value.isNotEmpty() }
 
     return directEnv + prefixedEnv
+}
+
+fun loadEnvFile(envFile: File): Map<String, String> {
+    if (!envFile.exists()) return emptyMap()
+
+    return envFile.readLines()
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("#") }
+        .mapNotNull { line ->
+            val separatorIndex = line.indexOf('=')
+            if (separatorIndex <= 0) return@mapNotNull null
+            val key = line.substring(0, separatorIndex).trim()
+            if (key.isEmpty()) return@mapNotNull null
+            val rawValue = line.substring(separatorIndex + 1).trim()
+            val unquoted = rawValue
+                .removeSurrounding("\"")
+                .removeSurrounding("'")
+            key to unquoted
+        }
+        .toMap()
 }

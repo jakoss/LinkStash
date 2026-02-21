@@ -33,6 +33,22 @@ Optional CORS override:
 - `CORS_ALLOWED_ORIGINS` as comma-separated origins
   - example: `http://localhost:5173,http://127.0.0.1:5173`
 
+## API tests (Ktor test host + JUnit)
+
+1. Create `src/server/.env.api-test` from `src/server/.env.api-test.example`.
+2. Set `API_TEST_RAINDROP_TOKEN` (you can reuse the token from `tests/e2e/.env`).
+3. Run from `src/`:
+
+```bash
+./gradlew :server:test
+```
+
+Optional: use a custom env file path:
+
+```bash
+./gradlew :server:test -PapiTestEnvFile=/absolute/path/to/.env
+```
+
 ## Auth + domain endpoints
 
 - `POST /v1/auth/raindrop/token` (expects `{ "accessToken": "...", "sessionMode": "BEARER" }`)
