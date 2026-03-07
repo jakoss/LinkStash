@@ -2,7 +2,7 @@
 
 ## Goal
 Stand up the server skeleton and persistence foundation (SQLite) so later phases can plug in:
-- Raindrop OAuth exchange and token storage
+- Manual Raindrop token exchange and token storage
 - LinkStash sessions
 - Domain endpoints
 
@@ -14,7 +14,7 @@ In scope:
 - Health endpoint and basic middleware (logging, request id)
 
 Out of scope:
-- Raindrop OAuth implementation (Phase 3)
+- Auth implementation details (Phase 3)
 - Domain endpoints (Phase 5)
 
 ## Tasks (checklist)
@@ -29,7 +29,7 @@ Out of scope:
     - [x] SQLite JDBC driver (`org.xerial:sqlite-jdbc:3.51.1.0`)
     - [x] Configure connection via `DB_URL` (`jdbc:sqlite:/absolute/path/to/linkstash.db`)
   - [x] Schema:
-    - [x] Define tables in Exposed (`users`, `raindrop_tokens`, `sessions`, `linkstash_config`, `oauth_states`)
+    - [x] Define tables in Exposed (`users`, `raindrop_tokens`, `sessions`, `linkstash_config`)
   - [x] Migrations (Exposed-driven):
     - [x] Implement a minimal `schema_migrations` table + code-based migration list
     - [x] For v1 bootstrap, run an idempotent “ensure schema” step (create missing tables/columns) on startup

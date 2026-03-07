@@ -1,6 +1,7 @@
 package pl.jsyty.linkstash.linkstash
 
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,16 +12,19 @@ import pl.jsyty.linkstash.contracts.error.ApiErrorCode
 import pl.jsyty.linkstash.contracts.link.LinksListResponse
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 
-class LinkStashController(
+class LinkStashViewModel(
     private val repository: LinkStashRepository,
-    private val defaultSpaceTitle: String,
-    private val scope: CoroutineScope
-) {
+    private val defaultSpaceTitle: String
+) : ViewModel() {
     private val _uiState = MutableStateFlow(LinkStashUiState())
     val uiState: StateFlow<LinkStashUiState> = _uiState.asStateFlow()
 
+    init {
+        initialize()
+    }
+
     fun initialize() {
-        scope.launch {
+        viewModelScope.launch {
             repository.hydrateSessionToken()
             val pendingCount = repository.pendingCount()
             _uiState.update { it.copy(pendingQueueCount = pendingCount) }
@@ -55,7 +59,7 @@ class LinkStashController(
             return
         }
 
-        scope.launch {
+        viewModelScope.launch {
             repository.enqueuePendingLink(normalizedUrl)
             val pendingCount = repository.pendingCount()
             _uiState.update { state ->
@@ -70,6 +74,8 @@ class LinkStashController(
             }
         }
     }
+
+    fun saveManualUrl(rawUrl: String) = onSharedUrlReceived(rawUrl)
 
     fun refresh() {
         if (!uiState.value.isAuthenticated) {
@@ -170,7 +176,7 @@ class LinkStashController(
     }
 
     fun logout() {
-        scope.launch {
+        viewModelScope.launch {
             repository.clearSession()
             val pendingCount = repository.pendingCount()
             _uiState.value = LinkStashUiState(
@@ -180,12 +186,13 @@ class LinkStashController(
         }
     }
 
-    fun close() {
+    override fun onCleared() {
         repository.close()
+        super.onCleared()
     }
 
     private fun runBusyAction(action: suspend () -> Unit) {
-        scope.launch {
+        viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
             try {
                 action()

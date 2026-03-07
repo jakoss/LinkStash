@@ -1,21 +1,20 @@
-# Phase 3 — Auth (Raindrop OAuth + LinkStash Sessions)
+# Phase 3 — Auth (manual Raindrop token exchange + LinkStash Sessions)
 
 ## Goal
 Implement auth end-to-end:
-- Start OAuth with Raindrop
-- Exchange auth code for Raindrop tokens (server-side)
+- Accept a manually pasted Raindrop API token
+- Validate and store the Raindrop token server-side
 - Store tokens encrypted at rest
 - Issue LinkStash session (cookie for web, bearer for mobile)
-- Refresh Raindrop tokens as needed
+- Require re-auth when the Raindrop token becomes invalid
 
 ## Scope
 In scope:
-- `/v1/auth/raindrop/start`
-- `/v1/auth/raindrop/exchange`
+- `/v1/auth/raindrop/token`
 - `/v1/me`
 - `/v1/auth/logout`
 - Session storage in DB (opaque token recommended)
-- Token refresh logic on demand (pre-emptively by expiry or reactively on 401)
+- Re-auth handling when Raindrop returns `401`
 
 Out of scope:
 - Domain endpoints (Phase 5)
@@ -31,14 +30,10 @@ Out of scope:
   - `io.ktor:ktor-serialization-kotlinx-json`
   - HTTP engine (server): `io.ktor:ktor-client-cio`
 
-Note:
-- We are not using Ktor’s server-side OAuth callback helper in v1; clients obtain the Raindrop `code` and POST it to `/v1/auth/raindrop/exchange`.
-
 ## Client auth flow (web + android)
-- Client calls `/v1/auth/raindrop/start` and opens the returned authorize URL.
-- Raindrop redirects back to the client redirect URI with `code` + `state`.
-- Client POSTs `code` (+ `state`, `redirectUri`, and optional `codeVerifier`) to `/v1/auth/raindrop/exchange`.
-- Backend exchanges the code for Raindrop tokens, stores them, and issues LinkStash auth:
+- User copies a Raindrop API token from Raindrop.
+- Client POSTs the token to `/v1/auth/raindrop/token`.
+- Backend validates the token, stores it encrypted, bootstraps LinkStash state, and issues LinkStash auth:
   - Web: set HTTP-only cookie (no bearer token returned to JS).
   - Android: return bearer token in JSON.
 
@@ -54,26 +49,22 @@ Note:
   - [ ] Install `Authentication`:
     - [ ] `session { ... }` provider that reads cookie session id and validates it against `sessions`
     - [ ] `bearer { ... }` provider that validates `Authorization` tokens against `sessions`
-- [ ] OAuth start:
-  - [ ] Generate `state` (and PKCE verifier/challenge if used)
-  - [ ] Persist `oauth_states` with TTL
-  - [ ] Return Raindrop authorize URL
-- [ ] OAuth exchange:
-  - [ ] Validate `state`
-  - [ ] Exchange `code` → Raindrop tokens (store encrypted)
+- [ ] Manual token exchange:
+  - [ ] Accept pasted Raindrop token
+  - [ ] Validate token with Raindrop `/user`
+  - [ ] Store token encrypted
   - [ ] Fetch Raindrop user id; upsert `users`
   - [ ] Create LinkStash session:
     - [ ] Web: set HTTP-only cookie
     - [ ] Android: return bearer token JSON
 - [ ] Logout:
   - [ ] Delete/expire session record
-- [ ] Raindrop refresh:
-  - [ ] Refresh on expiry
-  - [ ] Handle refresh failures (require re-auth)
+- [ ] Re-auth handling:
+  - [ ] If the stored Raindrop token is rejected, require the user to paste a new one
 
 ## Deliverables
-- Working login on at least one client (even a curl/manual test) using Raindrop account.
+- Working login on at least one client (even a curl/manual test) using a manually supplied Raindrop token.
 
 ## Acceptance criteria
 - A user can authenticate once and make authenticated API calls using LinkStash session auth.
-- Raindrop token refresh happens without user interaction when tokens expire.
+- When the stored Raindrop token is no longer valid, LinkStash returns an auth error and the user can paste a replacement token.

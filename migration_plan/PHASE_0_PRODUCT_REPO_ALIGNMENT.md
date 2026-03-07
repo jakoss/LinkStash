@@ -12,7 +12,7 @@ In scope:
 - Update product requirements to reflect **delete instead of archive**
 - Adopt a **single Gradle root** by renaming `mobile/` → `src/`
 - Update `AGENTS.md` files to remove Convex guidance and add new commands/structure
-- Register/configure Raindrop OAuth app and define redirect/deep link strategy
+- Document the temporary manual Raindrop token auth strategy
 
 Out of scope:
 - Any implementation of server endpoints or UI (phases 1+)
@@ -25,13 +25,9 @@ Out of scope:
   - [x] `LINKSTASH_ROOT_COLLECTION_TITLE`
   - [x] `LINKSTASH_DEFAULT_SPACE_TITLE`
   - [x] Base URLs for local and prod (API + web)
-- [ ] Raindrop OAuth setup:
-  - [ ] Create Raindrop app and obtain `client_id` / `client_secret` (manual external action)
-  - [x] Decide redirect URIs:
-    - [x] Web local/dev
-    - [x] Web prod
-    - [x] Mobile deep link (custom scheme and app link fallback)
-  - [x] Decide whether to use PKCE (required for mobile, recommended for web)
+- [x] Auth strategy:
+  - [x] Decide that clients will temporarily require a manually pasted Raindrop API token
+  - [x] Document deferred OAuth/PKCE work as follow-up, not current scope
 - [x] Repo restructure (no behavior changes, just layout):
   - [x] Rename `mobile/` → `src/`
   - [x] Ensure the Gradle wrapper remains under `src/`
@@ -43,7 +39,7 @@ Out of scope:
 
 ## Deliverables
 - Updated docs (`PRD.md`, relevant `AGENTS.md`)
-- A defined OAuth/deep-link strategy documented in `MIGRATION.md`
+- A defined manual-token auth strategy documented in `MIGRATION.md`
 - Repository ready for Phase 1 module creation
 
 ## Acceptance criteria

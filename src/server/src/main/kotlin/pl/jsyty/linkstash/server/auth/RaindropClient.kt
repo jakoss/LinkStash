@@ -371,7 +371,12 @@ class RaindropClient(
     ): RaindropRaindropPayload {
         val requestBody = buildJsonObject {
             put("link", url)
-            put("collection.\$id", collectionId.toRaindropCollectionIdPrimitive())
+            put(
+                "collection",
+                buildJsonObject {
+                    put("\$id", collectionId.toRaindropCollectionIdPrimitive())
+                }
+            )
             put("pleaseParse", buildJsonObject {})
         }
 
@@ -428,7 +433,12 @@ class RaindropClient(
         collectionId: String
     ): RaindropRaindropPayload {
         val requestBody = buildJsonObject {
-            put("collection.\$id", collectionId.toRaindropCollectionIdPrimitive())
+            put(
+                "collection",
+                buildJsonObject {
+                    put("\$id", collectionId.toRaindropCollectionIdPrimitive())
+                }
+            )
         }
 
         val response = httpClient.put("${config.raindropApiBaseUrl}/raindrop/$raindropId") {

@@ -1,6 +1,5 @@
-package pl.jsyty.linkstash
+package pl.jsyty.linkstash.linkstash
 
-import android.content.Context
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
@@ -10,10 +9,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
-import androidx.room.Room
 import androidx.room.RoomDatabase
-import pl.jsyty.linkstash.linkstash.LinkStashPendingQueueStore
-import pl.jsyty.linkstash.linkstash.PendingQueuedLink
 
 @Entity(
     tableName = "pending_links",
@@ -91,17 +87,5 @@ class RoomPendingLinkQueueStore(
 
     override suspend fun count(): Int {
         return pendingLinkDao.count()
-    }
-}
-
-object PendingLinkQueueStoreFactory {
-    fun create(context: Context): RoomPendingLinkQueueStore {
-        val database = Room.databaseBuilder(
-            context.applicationContext,
-            PendingLinkDatabase::class.java,
-            "linkstash_pending_links.db"
-        ).build()
-
-        return RoomPendingLinkQueueStore(database.pendingLinkDao())
     }
 }

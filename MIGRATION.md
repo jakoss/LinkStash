@@ -1,6 +1,6 @@
 # Convex → Ktor + Raindrop Pivot (Migration Plan)
 
-Last updated: 2026-02-08
+Last updated: 2026-03-07
 
 ## Goal
 Replace the Convex backend (and Bun/TS web app) with a small Ktor API that uses **Raindrop.io** as the system of record:
@@ -9,8 +9,8 @@ Replace the Convex backend (and Bun/TS web app) with a small Ktor API that uses 
 - **Archive** = dropped; “mark as read” becomes **delete** (moves to Raindrop “Trash”)
 
 Key constraints:
-- Clients **never** call Raindrop APIs directly (except redirecting to Raindrop OAuth in the browser).
-- Backend stores Raindrop tokens and manages refresh.
+- Clients hand the backend a user-provided Raindrop API token; clients do not call Raindrop APIs directly.
+- Backend stores the submitted Raindrop token and reuses it for domain requests.
 - Backend issues its **own** session tokens/cookies for client auth.
 - Contracts are shared across backend/android/web via Kotlin Multiplatform.
 
@@ -30,25 +30,17 @@ Non-goals for the first iteration:
   - API: `https://api.linkstash.app`
   - Web: `https://linkstash.app`
 
-### Raindrop OAuth app setup
-- Register one Raindrop OAuth app for LinkStash and keep credentials only in environment variables:
-  - `RAINDROP_CLIENT_ID`
-  - `RAINDROP_CLIENT_SECRET`
-- Allowed redirect URIs:
-  - Web local/dev callback: `http://localhost:8080/v1/auth/raindrop/callback`
-  - Web production callback: `https://api.linkstash.app/v1/auth/raindrop/callback`
-  - Mobile custom-scheme callback: `linkstash://auth/callback`
-  - Mobile app-link callback (fallback): `https://linkstash.app/auth/callback`
-
-### PKCE policy
-- PKCE is required for mobile and recommended for web; LinkStash backend stores verifier data in `oauth_states` for the exchange flow.
+### Auth strategy
+- Temporary v1 auth flow: the user manually pastes a Raindrop API token into the client.
+- Backend validates the token with `GET /user`, stores it encrypted, bootstraps LinkStash root/default collections, and issues a LinkStash session.
+- Deferred work: first-party OAuth/PKCE flow can be added later once the core clients are stable.
 
 ## Target architecture (high-level)
 - **Ktor API**: domain endpoints (spaces/links) + auth + Raindrop integration.
-- **DB (SQLite)**: users, sessions, Raindrop tokens, LinkStash root/default collection ids, and minimal OAuth/auth state.
+- **DB (SQLite)**: users, sessions, stored Raindrop tokens, and LinkStash root/default collection ids.
 - **Contracts module (KMP)**: request/response contracts + (optional) API client helpers.
 - **Android client**: share-to-save + browsing + move/delete.
-- **Web client (Compose for Web)**: minimal UI for paste-to-save + browsing + move/delete.
+- **Web client (Compose for Web)**: minimal UI for manual token login + paste-to-save + browsing + move/delete.
 
 ## Raindrop mapping (domain model)
 ### Collections / “Spaces”
@@ -76,15 +68,15 @@ Deleting a space:
 - `DELETE /rest/v1/collection/{id}` (removes collection and descendants; raindrops move to Trash)
 
 ## Authentication & session model
-### Raindrop OAuth (server-side token storage)
-OAuth steps:
-1. Client requests an auth start URL from our backend (backend generates `state`, optional PKCE, persists ephemeral state).
-2. User authorizes the Raindrop app in a browser.
-3. Client receives the `code` (either via backend callback redirect to web app, or via mobile deep link) and exchanges it with our backend.
-4. Backend exchanges `code` for `access_token` + `refresh_token`, stores tokens, and returns a LinkStash session.
+### Manual Raindrop token exchange
+Current steps:
+1. User copies a Raindrop API token from Raindrop.
+2. Client POSTs that token to the backend.
+3. Backend validates the token via `GET /user`, stores it encrypted, ensures LinkStash root/default collections exist, and returns a LinkStash session.
 
 Refresh:
-- Raindrop access tokens expire (~2 weeks); backend refreshes with `grant_type=refresh_token` as needed.
+- Not implemented in the current manual-token flow.
+- If the stored Raindrop token stops working, LinkStash requires the user to paste a fresh token.
 
 ### LinkStash session
 Backend issues its own session:
@@ -102,8 +94,7 @@ Logout:
 Expose a **LinkStash domain API**, not a raw Raindrop proxy. Suggested endpoints:
 
 ### Auth
-- `POST /v1/auth/raindrop/start` → `{ url }`
-- `POST /v1/auth/raindrop/exchange` → sets cookie / returns `{ accessToken, ... }` (LinkStash token)
+- `POST /v1/auth/raindrop/token` → accepts a manually provided Raindrop token, sets cookie / returns `{ bearerToken, ... }` (LinkStash token)
 - `POST /v1/auth/logout`
 - `GET /v1/me` → current user + selected root/default ids
 
@@ -136,7 +127,6 @@ Tables (suggested):
 - `raindrop_tokens`: `userId`, `accessTokenEnc`, `refreshTokenEnc`, `expiresAt`, `updatedAt`.
 - `sessions`: `id`, `userId`, `tokenHash`, `createdAt`, `lastSeenAt`, `expiresAt`, `deviceInfo`.
 - `linkstash_config`: `userId`, `rootCollectionId`, `defaultSpaceCollectionId`.
-- `oauth_states`: `state`, `userAgentHash?`, `pkceVerifierEnc?`, `createdAt`, `expiresAt` (TTL).
 
 Note:
 - Persist Raindrop collection ids for LinkStash root/default to avoid repeated “find by title” calls; recreate and update if they become invalid.
@@ -161,15 +151,12 @@ Target end state (single Gradle project under `src/`):
 - Update `PRD.md` to remove “archive toggle”; replace with “delete (moves to Raindrop Trash)”.
 - Use `src/` as the single Gradle root project for Kotlin modules.
 - Update `AGENTS.md` files to reflect the new stack (remove Convex references; add Ktor/Gradle commands; new module layout).
-- Register Raindrop OAuth app; decide redirect URIs for:
-  - Local dev web
-  - Production web
-  - Mobile (custom scheme / app link)
+- Document the temporary manual-token auth approach and deferred OAuth follow-up.
 
 Acceptance:
 - PRD reflects the new semantics.
 - `AGENTS.md` files reflect the new stack.
-- OAuth app created and secrets stored via env (not committed).
+- Migration docs reflect the temporary manual-token auth flow.
 
 ### Phase 1 — Contracts foundation (`contracts`)
 - Create `contracts` module:
@@ -189,18 +176,17 @@ Acceptance:
 Acceptance:
 - Server starts locally, connects to DB, runs migrations.
 
-### Phase 3 — Auth (Raindrop OAuth + LinkStash sessions)
+### Phase 3 — Auth (manual Raindrop token exchange + LinkStash sessions)
 - Implement:
-  - `auth/start` (state + optional PKCE)
-  - `auth/exchange` (code → tokens; create LinkStash session)
+  - `auth/raindrop/token` (manual token → stored Raindrop token + LinkStash session)
   - `me`, `logout`
-  - Raindrop token refresh logic (refresh on expiry or 401)
+  - Re-auth requirement when the stored Raindrop token stops working
 
 Acceptance:
-- User can sign in and obtain a LinkStash session; refresh works without re-auth.
+- User can sign in by pasting a Raindrop token and obtain a LinkStash session.
 
 ### Phase 4 — Raindrop “LinkStash root” bootstrap
-- On first authenticated request (or during exchange):
+- On first authenticated request (or during token exchange):
   - Fetch Raindrop user id (`GET /user`)
   - Ensure LinkStash root collection exists (create if missing) and persist `rootCollectionId` in `linkstash_config`
   - Ensure default space exists under that root (create if missing) and persist `defaultSpaceCollectionId` in `linkstash_config`
@@ -225,7 +211,7 @@ Acceptance:
 
 ### Phase 6 — Android integration (share-to-save first)
 - Replace Convex usage with LinkStash API client:
-  - Auth flow (open browser, complete exchange)
+  - Manual token login flow
   - Share intent → `POST /links`
   - Basic browse + move + delete
 - Offline queue (per PRD):
@@ -236,7 +222,7 @@ Acceptance:
 
 ### Phase 7 — Web (Compose for Web)
 - Build minimal Compose web UI:
-  - Sign-in with Raindrop via backend
+  - Manual token sign-in via backend
   - Paste-to-save
   - List spaces + links + move + delete
   - Export links in current space (newline-separated) client-side

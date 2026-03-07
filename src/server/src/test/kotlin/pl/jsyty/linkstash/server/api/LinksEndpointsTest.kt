@@ -9,6 +9,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.HttpStatusCode
 import java.util.UUID
+import kotlinx.coroutines.delay
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -50,10 +51,11 @@ class LinksEndpointsTest : ApiTestBase() {
             val linkUrl = "https://example.com/?linkstash-api-test=$runId"
             val createdLink = createLink(client, session, sourceSpace.id, linkUrl)
             linkId = createdLink.id
-            assertTrue(createdLink.spaceId.isNotBlank())
+            assertEquals(sourceSpace.id, createdLink.spaceId)
             assertEquals(linkUrl, createdLink.url)
 
-            listLinks(client, session, sourceSpace.id)
+            val sourceLinks = listLinksUntilContains(client, session, sourceSpace.id, createdLink.id)
+            assertTrue(sourceLinks.links.any { it.id == createdLink.id && it.spaceId == sourceSpace.id })
         } finally {
             cleanupLinkIfPresent(client = client, session = session, linkId = linkId)
             cleanupSpaceIfPresent(client = client, session = session, spaceId = sourceSpaceId)
@@ -88,16 +90,16 @@ class LinksEndpointsTest : ApiTestBase() {
                     setBody(LinkMoveRequest(spaceId = targetSpace.id))
                 }
             }
-            assertTrue(
-                moveLinkResponse.status == HttpStatusCode.OK || moveLinkResponse.status == HttpStatusCode.NotFound
-            )
-            if (moveLinkResponse.status == HttpStatusCode.OK) {
-                val movedLink = moveLinkResponse.body<LinkDto>()
-                assertEquals(createdLink.id, movedLink.id)
-                assertTrue(movedLink.spaceId.isNotBlank())
-            }
+            assertEquals(HttpStatusCode.OK, moveLinkResponse.status)
+            val movedLink = moveLinkResponse.body<LinkDto>()
+            assertEquals(createdLink.id, movedLink.id)
+            assertEquals(targetSpace.id, movedLink.spaceId)
 
-            listLinks(client, session, targetSpace.id)
+            val targetLinks = listLinksUntilContains(client, session, targetSpace.id, createdLink.id)
+            assertTrue(targetLinks.links.any { it.id == createdLink.id && it.spaceId == targetSpace.id })
+
+            val sourceLinks = listLinksUntilMissing(client, session, sourceSpace.id, createdLink.id)
+            assertTrue(sourceLinks.links.none { it.id == createdLink.id })
         } finally {
             cleanupLinkIfPresent(client = client, session = session, linkId = linkId)
             cleanupSpaceIfPresent(client = client, session = session, spaceId = sourceSpaceId)
@@ -127,15 +129,11 @@ class LinksEndpointsTest : ApiTestBase() {
                     bearerAuth(session.bearerToken)
                 }
             }
-            assertTrue(
-                deleteLinkResponse.status == HttpStatusCode.NoContent ||
-                    deleteLinkResponse.status == HttpStatusCode.NotFound
-            )
-            if (deleteLinkResponse.status == HttpStatusCode.NoContent) {
-                linkId = null
-            }
+            assertEquals(HttpStatusCode.NoContent, deleteLinkResponse.status)
+            linkId = null
 
-            listLinks(client, session, sourceSpace.id)
+            val sourceLinks = listLinksUntilMissing(client, session, sourceSpace.id, createdLink.id)
+            assertTrue(sourceLinks.links.none { it.id == createdLink.id })
         } finally {
             cleanupLinkIfPresent(client = client, session = session, linkId = linkId)
             cleanupSpaceIfPresent(client = client, session = session, spaceId = sourceSpaceId)
@@ -187,5 +185,47 @@ class LinksEndpointsTest : ApiTestBase() {
         }
         assertEquals(HttpStatusCode.OK, response.status)
         return response.body<LinkDto>()
+    }
+
+    private suspend fun listLinksUntilContains(
+        client: io.ktor.client.HttpClient,
+        session: BearerSession,
+        spaceId: String,
+        linkId: String,
+        attempts: Int = 5,
+        delayMs: Long = 500
+    ): LinksListResponse {
+        repeat(attempts) { attempt ->
+            val links = listLinks(client, session, spaceId)
+            if (links.links.any { it.id == linkId }) {
+                return links
+            }
+            if (attempt < attempts - 1) {
+                delay(delayMs)
+            }
+        }
+
+        return listLinks(client, session, spaceId)
+    }
+
+    private suspend fun listLinksUntilMissing(
+        client: io.ktor.client.HttpClient,
+        session: BearerSession,
+        spaceId: String,
+        linkId: String,
+        attempts: Int = 5,
+        delayMs: Long = 500
+    ): LinksListResponse {
+        repeat(attempts) { attempt ->
+            val links = listLinks(client, session, spaceId)
+            if (links.links.none { it.id == linkId }) {
+                return links
+            }
+            if (attempt < attempts - 1) {
+                delay(delayMs)
+            }
+        }
+
+        return listLinks(client, session, spaceId)
     }
 }

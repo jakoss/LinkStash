@@ -2,7 +2,7 @@
 
 ## Goal
 Build the web client using Compose for Web:
-- Sign in via backend (Raindrop OAuth)
+- Sign in via backend with a manually pasted Raindrop token
 - Paste-to-save
 - Browse spaces and links
 - Move and delete links
@@ -18,9 +18,8 @@ Out of scope:
 
 ## Tasks (checklist)
 - [ ] Auth:
-  - [ ] “Sign in with Raindrop” button calls backend `auth/start` and redirects to Raindrop
-  - [ ] Raindrop redirects back to a web route (e.g. `/auth/raindrop`) with `code` + `state`
-  - [ ] Web app POSTs `code` (+ `state`, `redirectUri`, optional `codeVerifier`) to backend `/v1/auth/raindrop/exchange` and receives an HTTP-only session cookie
+  - [ ] Token input accepts a user-pasted Raindrop API token
+  - [ ] Web app POSTs the token to backend `/v1/auth/raindrop/token` and receives an HTTP-only session cookie
 - [ ] Core UI:
   - [ ] Paste URL to save into default/current space
   - [ ] List spaces and switch between them

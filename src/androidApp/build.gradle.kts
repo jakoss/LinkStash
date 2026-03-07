@@ -4,7 +4,6 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
-    alias(libs.plugins.ksp)
 }
 
 kotlin {
@@ -25,15 +24,8 @@ kotlin {
         implementation(libs.compose.foundation)
         implementation(libs.compose.material3)
         implementation(libs.compose.ui)
-        implementation(libs.androidx.room.runtime)
-        implementation(libs.androidx.room.ktx)
-        implementation(libs.androidx.datastore.preferences)
         implementation(libs.compose.uiToolingPreview)
     }
-}
-
-dependencies {
-    ksp(libs.androidx.room.compiler)
 }
 
 android {
