@@ -6,6 +6,30 @@ plugins {
     alias(libs.plugins.composeCompiler)
 }
 
+fun releaseValue(propertyName: String, environmentName: String): String? {
+    return providers.gradleProperty(propertyName)
+        .orElse(providers.environmentVariable(environmentName))
+        .orNull
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+}
+
+val releaseVersionName = releaseValue("releaseVersionName", "ANDROID_RELEASE_VERSION_NAME") ?: "1.0"
+val releaseVersionCode = releaseValue("releaseVersionCode", "ANDROID_RELEASE_VERSION_CODE")
+    ?.toIntOrNull()
+    ?: 1
+
+val releaseStoreFilePath = releaseValue("androidReleaseStoreFile", "ANDROID_RELEASE_STORE_FILE")
+val releaseStorePassword = releaseValue("androidReleaseStorePassword", "ANDROID_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = releaseValue("androidReleaseKeyAlias", "ANDROID_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = releaseValue("androidReleaseKeyPassword", "ANDROID_RELEASE_KEY_PASSWORD")
+val isReleaseSigningConfigured = listOf(
+    releaseStoreFilePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { it != null }
+
 kotlin {
     target {
         compilerOptions {
@@ -33,12 +57,25 @@ android {
     namespace = "pl.jsyty.linkstash"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
+    signingConfigs {
+        if (isReleaseSigningConfigured) {
+            create("release") {
+                storeFile = file(releaseStoreFilePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "pl.jsyty.linkstash"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = releaseVersionCode
+        versionName = releaseVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     packaging {
@@ -49,6 +86,9 @@ android {
     buildTypes {
         getByName("release") {
             isMinifyEnabled = false
+            if (isReleaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {
