@@ -8,6 +8,7 @@ data class LinkDto(
     val url: String,
     val title: String? = null,
     val excerpt: String? = null,
+    val previewImageUrl: String? = null,
     val createdAt: String? = null,
     val spaceId: String
 )

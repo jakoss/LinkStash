@@ -294,6 +294,7 @@ class LinkStashDomainService(
             url = raindropUrl,
             title = title?.trim()?.takeIf { it.isNotBlank() },
             excerpt = excerpt?.trim()?.takeIf { it.isNotBlank() },
+            previewImageUrl = normalizedPreviewImageUrl(),
             createdAt = created,
             spaceId = raindropSpaceId
         )
@@ -302,4 +303,20 @@ class LinkStashDomainService(
     private companion object {
         const val LINKS_PAGE_SIZE = 50
     }
+}
+
+internal fun RaindropRaindropPayload.normalizedPreviewImageUrl(): String? {
+    val normalizedCover = cover?.trim()?.takeIf { it.isNotBlank() }
+    if (normalizedCover != null) {
+        return normalizedCover
+    }
+
+    return media
+        ?.firstOrNull { mediaItem ->
+            mediaItem.type.equals("image", ignoreCase = true) &&
+                !mediaItem.link.isNullOrBlank()
+        }
+        ?.link
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
 }

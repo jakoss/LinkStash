@@ -73,6 +73,21 @@ kotlin {
                 optIn("kotlin.time.ExperimentalTime")
             }
         }
+
+        androidMain.dependencies {
+            implementation(libs.landscapist.image)
+        }
+
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
+
+        named("androidHostTest") {
+            dependencies {
+                implementation(libs.kotlin.testJunit)
+                implementation(libs.kotlinx.coroutines.test)
+            }
+        }
     }
 }
 

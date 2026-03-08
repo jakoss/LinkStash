@@ -11,7 +11,7 @@ import pl.jsyty.linkstash.contracts.link.LinksListResponse
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 import pl.jsyty.linkstash.contracts.user.UserDto
 
-class LinkStashRepository(
+open class LinkStashRepository(
     private val sessionStore: LinkStashSessionStore,
     private val pendingQueueStore: LinkStashPendingQueueStore,
     private val config: LinkStashClientConfig
@@ -25,19 +25,19 @@ class LinkStashRepository(
         )
     )
 
-    suspend fun hydrateSessionToken() {
+    open suspend fun hydrateSessionToken() {
         cachedBearerToken = sessionStore.readBearerToken()
             ?.trim()
             ?.takeIf { it.isNotBlank() }
     }
 
-    fun hasSessionToken(): Boolean = !cachedBearerToken.isNullOrBlank()
+    open fun hasSessionToken(): Boolean = !cachedBearerToken.isNullOrBlank()
 
-    suspend fun fetchCurrentUser(): UserDto {
+    open suspend fun fetchCurrentUser(): UserDto {
         return apiClient.authApi.me()
     }
 
-    suspend fun exchangeRaindropToken(rawRaindropToken: String): UserDto {
+    open suspend fun exchangeRaindropToken(rawRaindropToken: String): UserDto {
         val normalizedRaindropToken = rawRaindropToken.trim()
             .removePrefix("Bearer ")
             .removePrefix("bearer ")
@@ -62,65 +62,65 @@ class LinkStashRepository(
         return authResponse.user
     }
 
-    suspend fun listSpaces(): List<SpaceDto> {
+    open suspend fun listSpaces(): List<SpaceDto> {
         return apiClient.spacesApi.list().spaces
     }
 
-    suspend fun listLinks(spaceId: String, cursor: String? = null): LinksListResponse {
+    open suspend fun listLinks(spaceId: String, cursor: String? = null): LinksListResponse {
         return apiClient.linksApi.list(spaceId = spaceId, cursor = cursor)
     }
 
-    suspend fun createLink(spaceId: String, url: String): LinkDto {
+    open suspend fun createLink(spaceId: String, url: String): LinkDto {
         return apiClient.linksApi.create(
             spaceId = spaceId,
             request = LinkCreateRequest(url = url)
         )
     }
 
-    suspend fun moveLink(linkId: String, targetSpaceId: String): LinkDto {
+    open suspend fun moveLink(linkId: String, targetSpaceId: String): LinkDto {
         return apiClient.linksApi.move(
             linkId = linkId,
             request = LinkMoveRequest(spaceId = targetSpaceId)
         )
     }
 
-    suspend fun deleteLink(linkId: String) {
+    open suspend fun deleteLink(linkId: String) {
         apiClient.linksApi.delete(linkId)
     }
 
-    suspend fun enqueuePendingLink(url: String): Boolean {
+    open suspend fun enqueuePendingLink(url: String): Boolean {
         return pendingQueueStore.enqueue(url)
     }
 
-    suspend fun pendingCount(): Int {
+    open suspend fun pendingCount(): Int {
         return pendingQueueStore.count()
     }
 
-    suspend fun flushPendingToDefaultSpace(spaces: List<SpaceDto>): Int {
-        val targetSpaceId = resolveDefaultSpaceId(spaces) ?: return 0
+    open suspend fun flushPendingToDefaultSpace(spaces: List<SpaceDto>): List<LinkDto> {
+        val targetSpaceId = resolveDefaultSpaceId(spaces) ?: return emptyList()
         val pendingLinks = pendingQueueStore.listOldest()
 
-        var sentCount = 0
+        val createdLinks = mutableListOf<LinkDto>()
         for (pendingLink in pendingLinks) {
             try {
-                createLink(spaceId = targetSpaceId, url = pendingLink.url)
+                val createdLink = createLink(spaceId = targetSpaceId, url = pendingLink.url)
                 pendingQueueStore.deleteById(pendingLink.id)
-                sentCount += 1
+                createdLinks += createdLink
             } catch (_: Exception) {
                 // Keep remaining queue as-is and retry later.
                 break
             }
         }
 
-        return sentCount
+        return createdLinks
     }
 
-    suspend fun clearSession() {
+    open suspend fun clearSession() {
         cachedBearerToken = null
         sessionStore.clearBearerToken()
     }
 
-    fun close() {
+    open fun close() {
         apiClient.close()
     }
 

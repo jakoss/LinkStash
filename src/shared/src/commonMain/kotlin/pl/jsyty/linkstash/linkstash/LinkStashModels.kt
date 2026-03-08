@@ -36,6 +36,13 @@ data class LinkStashUiState(
     val selectedSpaceId: String? = null,
     val links: List<LinkDto> = emptyList(),
     val nextCursor: String? = null,
+    val pendingMetadataLinkIds: Set<String> = emptySet(),
     val pendingQueueCount: Int = 0,
     val statusMessage: String = "Paste Raindrop token to sync and browse links"
 )
+
+fun needsMetadataPolling(link: LinkDto): Boolean {
+    return link.previewImageUrl.isNullOrBlank() &&
+        link.excerpt.isNullOrBlank() &&
+        (link.title.isNullOrBlank() || link.title == link.url)
+}
