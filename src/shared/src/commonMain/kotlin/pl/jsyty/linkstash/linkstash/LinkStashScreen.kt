@@ -1,5 +1,7 @@
 package pl.jsyty.linkstash.linkstash
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import pl.jsyty.linkstash.contracts.link.LinkDto
@@ -370,6 +373,7 @@ private fun AuthenticatedScreen(
             items(uiState.links, key = { it.id }) { link ->
                 LinkCard(
                     link = link,
+                    isPendingMetadata = link.id in uiState.pendingMetadataLinkIds,
                     spaces = uiState.spaces,
                     onMoveLink = onMoveLink,
                     onDeleteLink = onDeleteLink
@@ -393,6 +397,7 @@ private fun AuthenticatedScreen(
 @Composable
 private fun LinkCard(
     link: LinkDto,
+    isPendingMetadata: Boolean,
     spaces: List<SpaceDto>,
     onMoveLink: (String, String) -> Unit,
     onDeleteLink: (String) -> Unit
@@ -418,6 +423,13 @@ private fun LinkCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (!link.previewImageUrl.isNullOrBlank() || isPendingMetadata) {
+                LinkCardPreview(
+                    previewImageUrl = link.previewImageUrl,
+                    title = displayTitle,
+                    isPendingMetadata = isPendingMetadata
+                )
+            }
             Text(
                 text = displayTitle,
                 style = MaterialTheme.typography.titleMedium,
@@ -479,6 +491,36 @@ private fun LinkCard(
                     Text("Delete")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LinkCardPreview(
+    previewImageUrl: String?,
+    title: String,
+    isPendingMetadata: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .aspectRatio(16f / 9f),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!previewImageUrl.isNullOrBlank()) {
+            LinkPreviewImage(
+                imageUrl = previewImageUrl,
+                contentDescription = title,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (isPendingMetadata) {
+            Text(
+                text = "Parsing preview...",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

@@ -53,9 +53,16 @@ class LinksEndpointsTest : ApiTestBase() {
             linkId = createdLink.id
             assertEquals(sourceSpace.id, createdLink.spaceId)
             assertEquals(linkUrl, createdLink.url)
+            assertTrue(createdLink.previewImageUrl?.isNotBlank() ?: true)
 
             val sourceLinks = listLinksUntilContains(client, session, sourceSpace.id, createdLink.id)
-            assertTrue(sourceLinks.links.any { it.id == createdLink.id && it.spaceId == sourceSpace.id })
+            assertTrue(
+                sourceLinks.links.any { link ->
+                    link.id == createdLink.id &&
+                        link.spaceId == sourceSpace.id &&
+                        (link.previewImageUrl?.isNotBlank() ?: true)
+                }
+            )
         } finally {
             cleanupLinkIfPresent(client = client, session = session, linkId = linkId)
             cleanupSpaceIfPresent(client = client, session = session, spaceId = sourceSpaceId)
@@ -94,9 +101,16 @@ class LinksEndpointsTest : ApiTestBase() {
             val movedLink = moveLinkResponse.body<LinkDto>()
             assertEquals(createdLink.id, movedLink.id)
             assertEquals(targetSpace.id, movedLink.spaceId)
+            assertTrue(movedLink.previewImageUrl?.isNotBlank() ?: true)
 
             val targetLinks = listLinksUntilContains(client, session, targetSpace.id, createdLink.id)
-            assertTrue(targetLinks.links.any { it.id == createdLink.id && it.spaceId == targetSpace.id })
+            assertTrue(
+                targetLinks.links.any { link ->
+                    link.id == createdLink.id &&
+                        link.spaceId == targetSpace.id &&
+                        (link.previewImageUrl?.isNotBlank() ?: true)
+                }
+            )
 
             val sourceLinks = listLinksUntilMissing(client, session, sourceSpace.id, createdLink.id)
             assertTrue(sourceLinks.links.none { it.id == createdLink.id })

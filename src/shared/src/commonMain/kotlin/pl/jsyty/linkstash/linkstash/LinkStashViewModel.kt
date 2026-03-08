@@ -2,17 +2,22 @@ package pl.jsyty.linkstash.linkstash
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import pl.jsyty.linkstash.contracts.client.ApiException
 import pl.jsyty.linkstash.contracts.error.ApiErrorCode
+import pl.jsyty.linkstash.contracts.link.LinkDto
 import pl.jsyty.linkstash.contracts.link.LinksListResponse
 import pl.jsyty.linkstash.contracts.space.SpaceDto
+import pl.jsyty.linkstash.contracts.user.UserDto
 
 class LinkStashViewModel(
     private val repository: LinkStashRepository,
@@ -20,7 +25,10 @@ class LinkStashViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LinkStashUiState())
     val uiState: StateFlow<LinkStashUiState> = _uiState.asStateFlow()
+
     private val actionMutex = Mutex()
+    private val metadataPollingBatches = mutableListOf<MetadataPollingBatch>()
+    private var metadataPollingJob: Job? = null
 
     init {
         initialize()
@@ -120,42 +128,52 @@ class LinkStashViewModel(
 
         runBusyAction {
             val spaces = uiState.value.spaces.ifEmpty { repository.listSpaces() }
-            val sentCount = repository.flushPendingToDefaultSpace(spaces)
+            val createdLinks = repository.flushPendingToDefaultSpace(spaces)
             val pendingCount = repository.pendingCount()
-
             val selectedSpaceId = uiState.value.selectedSpaceId
             val refreshedLinks = if (selectedSpaceId != null) {
                 repository.listLinks(spaceId = selectedSpaceId)
             } else {
                 LinksListResponse(links = emptyList())
             }
+            val pendingMetadataIds = resolvePendingMetadataIds(
+                visibleLinks = refreshedLinks.links,
+                trackedLinks = createdLinks
+            )
 
             _uiState.update {
                 it.copy(
                     pendingQueueCount = pendingCount,
                     links = refreshedLinks.links,
                     nextCursor = refreshedLinks.nextCursor,
-                    statusMessage = if (sentCount > 0) {
-                        "Synced $sentCount queued link(s)"
+                    pendingMetadataLinkIds = pendingMetadataIds,
+                    statusMessage = if (createdLinks.isNotEmpty()) {
+                        "Synced ${createdLinks.size} queued link(s)"
                     } else {
                         "No queued links were synced"
                     }
                 )
             }
+            reconcileMetadataPolling()
         }
     }
 
     fun selectSpace(spaceId: String) {
+        cancelMetadataPollingJob()
         runBusyAction {
             val linksResponse = repository.listLinks(spaceId = spaceId)
+            val pendingMetadataIds = resolvePendingMetadataIds(visibleLinks = linksResponse.links)
+
             _uiState.update {
                 it.copy(
                     selectedSpaceId = spaceId,
                     links = linksResponse.links,
                     nextCursor = linksResponse.nextCursor,
+                    pendingMetadataLinkIds = pendingMetadataIds,
                     statusMessage = "Loaded links"
                 )
             }
+            reconcileMetadataPolling()
         }
     }
 
@@ -191,6 +209,7 @@ class LinkStashViewModel(
     }
 
     fun logout() {
+        stopMetadataPolling(clearPendingIds = true)
         viewModelScope.launch {
             repository.clearSession()
             val pendingCount = repository.pendingCount()
@@ -202,6 +221,7 @@ class LinkStashViewModel(
     }
 
     override fun onCleared() {
+        stopMetadataPolling(clearPendingIds = false)
         repository.close()
         super.onCleared()
     }
@@ -229,6 +249,7 @@ class LinkStashViewModel(
         keepSessionOnError: Boolean
     ) {
         if (error is ApiException && error.error.code == ApiErrorCode.UNAUTHORIZED) {
+            stopMetadataPolling(clearPendingIds = true)
             repository.clearSession()
             val pendingCount = repository.pendingCount()
             _uiState.value = LinkStashUiState(
@@ -250,6 +271,7 @@ class LinkStashViewModel(
                 statusMessage = statusMessage
             )
         }
+        reconcileMetadataPolling()
     }
 
     private fun connectionAwareMessage(
@@ -286,18 +308,22 @@ class LinkStashViewModel(
     private suspend fun refreshAllData(statusMessage: String) {
         val user = repository.fetchCurrentUser()
         val spaces = repository.listSpaces()
-        val selectedSpaceId = resolveSelectedSpaceId(spaces = spaces, preferredSpaceId = uiState.value.selectedSpaceId)
-
+        val selectedSpaceId = resolveSelectedSpaceId(
+            spaces = spaces,
+            preferredSpaceId = uiState.value.selectedSpaceId
+        )
         val (resolvedSelectedSpaceId, linksResponse) = safeListLinks(selectedSpaceId)
-
-        val syncedCount = repository.flushPendingToDefaultSpace(spaces)
+        val createdLinks = repository.flushPendingToDefaultSpace(spaces)
         val pendingCount = repository.pendingCount()
-
-        val refreshedLinksResponse = if (syncedCount > 0 && resolvedSelectedSpaceId != null) {
+        val refreshedLinksResponse = if (createdLinks.isNotEmpty() && resolvedSelectedSpaceId != null) {
             safeListLinks(resolvedSelectedSpaceId).second
         } else {
             linksResponse
         }
+        val pendingMetadataIds = resolvePendingMetadataIds(
+            visibleLinks = refreshedLinksResponse.links,
+            trackedLinks = createdLinks
+        )
 
         _uiState.update {
             it.copy(
@@ -307,14 +333,16 @@ class LinkStashViewModel(
                 selectedSpaceId = resolvedSelectedSpaceId,
                 links = refreshedLinksResponse.links,
                 nextCursor = refreshedLinksResponse.nextCursor,
+                pendingMetadataLinkIds = pendingMetadataIds,
                 pendingQueueCount = pendingCount,
-                statusMessage = if (syncedCount > 0) {
-                    "$statusMessage. Synced $syncedCount queued link(s)."
+                statusMessage = if (createdLinks.isNotEmpty()) {
+                    "$statusMessage. Synced ${createdLinks.size} queued link(s)."
                 } else {
                     statusMessage
                 }
             )
         }
+        reconcileMetadataPolling()
     }
 
     private suspend fun safeListLinks(spaceId: String?): Pair<String?, LinksListResponse> {
@@ -336,13 +364,17 @@ class LinkStashViewModel(
     private suspend fun refreshSelectedSpaceLinks(statusMessage: String) {
         val selectedSpaceId = uiState.value.selectedSpaceId ?: return
         val linksResponse = repository.listLinks(spaceId = selectedSpaceId)
+        val pendingMetadataIds = resolvePendingMetadataIds(visibleLinks = linksResponse.links)
+
         _uiState.update {
             it.copy(
                 links = linksResponse.links,
                 nextCursor = linksResponse.nextCursor,
+                pendingMetadataLinkIds = pendingMetadataIds,
                 statusMessage = statusMessage
             )
         }
+        reconcileMetadataPolling()
     }
 
     private fun resolveSelectedSpaceId(
@@ -359,5 +391,176 @@ class LinkStashViewModel(
         return spaces.firstOrNull {
             it.title.equals(defaultSpaceTitle, ignoreCase = true)
         }?.id ?: spaces.firstOrNull()?.id
+    }
+
+    private fun resolvePendingMetadataIds(
+        visibleLinks: List<LinkDto>,
+        trackedLinks: List<LinkDto> = emptyList()
+    ): Set<String> {
+        val visibleLinksById = visibleLinks.associateBy(LinkDto::id)
+        val trimmedBatches = metadataPollingBatches.mapNotNull { batch ->
+            val remainingIds = batch.ids.filterTo(mutableSetOf()) { linkId ->
+                visibleLinksById[linkId]?.let(::needsMetadataPolling) == true
+            }
+            batch.copy(ids = remainingIds).takeIf { it.ids.isNotEmpty() }
+        }
+
+        metadataPollingBatches.clear()
+        metadataPollingBatches.addAll(trimmedBatches)
+
+        val activeIds = metadataPollingBatches.flatMapTo(mutableSetOf()) { it.ids }
+        val newIds = trackedLinks.mapNotNullTo(mutableSetOf()) { trackedLink ->
+            visibleLinksById[trackedLink.id]
+                ?.takeIf(::needsMetadataPolling)
+                ?.id
+                ?.takeIf { it !in activeIds }
+        }
+
+        if (newIds.isNotEmpty()) {
+            metadataPollingBatches += MetadataPollingBatch(ids = newIds)
+        }
+
+        return metadataPollingBatches.flatMapTo(mutableSetOf()) { it.ids }
+    }
+
+    private fun reconcileMetadataPolling() {
+        val currentState = uiState.value
+        val shouldPoll = currentState.isAuthenticated &&
+            currentState.selectedSpaceId != null &&
+            currentState.pendingMetadataLinkIds.isNotEmpty()
+
+        if (!shouldPoll) {
+            cancelMetadataPollingJob()
+            return
+        }
+
+        if (metadataPollingJob?.isActive == true) {
+            return
+        }
+
+        metadataPollingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(METADATA_POLL_INTERVAL_MS)
+
+                val shouldContinue = actionMutex.withLock {
+                    val stateBeforeRefresh = uiState.value
+                    val selectedSpaceId = stateBeforeRefresh.selectedSpaceId
+                    if (!stateBeforeRefresh.isAuthenticated ||
+                        selectedSpaceId == null ||
+                        stateBeforeRefresh.pendingMetadataLinkIds.isEmpty()
+                    ) {
+                        return@withLock false
+                    }
+
+                    try {
+                        val linksResponse = repository.listLinks(spaceId = selectedSpaceId)
+                        val pendingMetadataIds = advancePendingMetadataBatches(linksResponse.links)
+                        val mergedLinks = mergeFirstPageLinks(
+                            currentLinks = stateBeforeRefresh.links,
+                            refreshedFirstPageLinks = linksResponse.links
+                        )
+                        val mergedNextCursor = mergeNextCursor(
+                            currentLinks = stateBeforeRefresh.links,
+                            currentNextCursor = stateBeforeRefresh.nextCursor,
+                            refreshedFirstPageLinks = linksResponse.links,
+                            refreshedNextCursor = linksResponse.nextCursor
+                        )
+
+                        _uiState.update {
+                            it.copy(
+                                links = mergedLinks,
+                                nextCursor = mergedNextCursor,
+                                pendingMetadataLinkIds = pendingMetadataIds
+                            )
+                        }
+                    } catch (error: Throwable) {
+                        stopMetadataPolling(clearPendingIds = false)
+                        handleFailure(error, keepSessionOnError = true)
+                        return@withLock false
+                    }
+
+                    uiState.value.pendingMetadataLinkIds.isNotEmpty()
+                }
+
+                if (!shouldContinue) {
+                    break
+                }
+            }
+
+            metadataPollingJob = null
+        }
+    }
+
+    private fun advancePendingMetadataBatches(visibleLinks: List<LinkDto>): Set<String> {
+        val visibleLinksById = visibleLinks.associateBy(LinkDto::id)
+        val nextBatches = metadataPollingBatches.mapNotNull { batch ->
+            val unresolvedIds = batch.ids.filterTo(mutableSetOf()) { linkId ->
+                visibleLinksById[linkId]?.let(::needsMetadataPolling) == true
+            }
+
+            if (unresolvedIds.isEmpty()) {
+                return@mapNotNull null
+            }
+
+            val nextAttempt = batch.attempts + 1
+            if (nextAttempt >= METADATA_POLL_MAX_ATTEMPTS) {
+                return@mapNotNull null
+            }
+
+            batch.copy(ids = unresolvedIds, attempts = nextAttempt)
+        }
+
+        metadataPollingBatches.clear()
+        metadataPollingBatches.addAll(nextBatches)
+
+        return metadataPollingBatches.flatMapTo(mutableSetOf()) { it.ids }
+    }
+
+    private fun mergeFirstPageLinks(
+        currentLinks: List<LinkDto>,
+        refreshedFirstPageLinks: List<LinkDto>
+    ): List<LinkDto> {
+        if (currentLinks.size <= refreshedFirstPageLinks.size) {
+            return refreshedFirstPageLinks
+        }
+
+        val refreshedIds = refreshedFirstPageLinks.mapTo(mutableSetOf()) { it.id }
+        return refreshedFirstPageLinks + currentLinks.filter { it.id !in refreshedIds }
+    }
+
+    private fun mergeNextCursor(
+        currentLinks: List<LinkDto>,
+        currentNextCursor: String?,
+        refreshedFirstPageLinks: List<LinkDto>,
+        refreshedNextCursor: String?
+    ): String? {
+        return if (currentLinks.size > refreshedFirstPageLinks.size && currentNextCursor != null) {
+            currentNextCursor
+        } else {
+            refreshedNextCursor
+        }
+    }
+
+    private fun stopMetadataPolling(clearPendingIds: Boolean) {
+        cancelMetadataPollingJob()
+        metadataPollingBatches.clear()
+        if (clearPendingIds) {
+            _uiState.update { it.copy(pendingMetadataLinkIds = emptySet()) }
+        }
+    }
+
+    private fun cancelMetadataPollingJob() {
+        metadataPollingJob?.cancel()
+        metadataPollingJob = null
+    }
+
+    private data class MetadataPollingBatch(
+        val ids: Set<String>,
+        val attempts: Int = 0
+    )
+
+    private companion object {
+        const val METADATA_POLL_INTERVAL_MS = 2_000L
+        const val METADATA_POLL_MAX_ATTEMPTS = 10
     }
 }

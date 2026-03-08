@@ -111,6 +111,8 @@ data class RaindropRaindropPayload(
     val link: String? = null,
     val title: String? = null,
     val excerpt: String? = null,
+    val cover: String? = null,
+    val media: List<RaindropMediaPayload>? = null,
     val created: String? = null,
     val collection: JsonElement? = null,
     @SerialName("collection.\$id")
@@ -136,6 +138,12 @@ data class RaindropRaindropPayload(
         return collectionId?.toString()
     }
 }
+
+@Serializable
+data class RaindropMediaPayload(
+    val type: String? = null,
+    val link: String? = null
+)
 
 class RaindropClient(
     private val config: AppConfig,
