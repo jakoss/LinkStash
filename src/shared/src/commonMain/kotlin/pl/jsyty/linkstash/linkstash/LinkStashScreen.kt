@@ -1,6 +1,7 @@
 package pl.jsyty.linkstash.linkstash
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import pl.jsyty.linkstash.contracts.link.LinkDto
@@ -422,6 +424,7 @@ private fun LinkCard(
     onDeleteLink: (String) -> Unit
 ) {
     var isMoveMenuExpanded by remember(link.id) { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
     val destinationSpaces = remember(spaces, link.spaceId) {
         spaces.filter { it.id != link.spaceId }
     }
@@ -442,34 +445,42 @@ private fun LinkCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (!link.previewImageUrl.isNullOrBlank() || isPendingMetadata) {
-                LinkCardPreview(
-                    previewImageUrl = link.previewImageUrl,
-                    title = displayTitle,
-                    isPendingMetadata = isPendingMetadata
-                )
-            }
-            Text(
-                text = displayTitle,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = link.url,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            link.excerpt?.takeIf { it.isNotBlank() }?.let { excerpt ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.medium)
+                    .clickable { uriHandler.openUri(link.url) },
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (!link.previewImageUrl.isNullOrBlank() || isPendingMetadata) {
+                    LinkCardPreview(
+                        previewImageUrl = link.previewImageUrl,
+                        title = displayTitle,
+                        isPendingMetadata = isPendingMetadata
+                    )
+                }
                 Text(
-                    text = excerpt,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
+                    text = displayTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                Text(
+                    text = link.url,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                link.excerpt?.takeIf { it.isNotBlank() }?.let { excerpt ->
+                    Text(
+                        text = excerpt,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Row(
