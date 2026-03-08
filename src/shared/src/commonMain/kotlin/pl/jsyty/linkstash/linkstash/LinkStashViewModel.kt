@@ -2,6 +2,8 @@ package pl.jsyty.linkstash.linkstash
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +20,7 @@ class LinkStashViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(LinkStashUiState())
     val uiState: StateFlow<LinkStashUiState> = _uiState.asStateFlow()
+    private val actionMutex = Mutex()
 
     init {
         initialize()
@@ -27,10 +30,18 @@ class LinkStashViewModel(
         viewModelScope.launch {
             repository.hydrateSessionToken()
             val pendingCount = repository.pendingCount()
-            _uiState.update { it.copy(pendingQueueCount = pendingCount) }
+            val hasSessionToken = repository.hasSessionToken()
+            _uiState.update {
+                it.copy(
+                    isAuthenticated = hasSessionToken,
+                    pendingQueueCount = pendingCount
+                )
+            }
 
-            if (repository.hasSessionToken()) {
-                refreshAllData(statusMessage = "Session restored")
+            if (hasSessionToken) {
+                runBusyAction(keepSessionOnError = true) {
+                    refreshAllData(statusMessage = "Session restored")
+                }
             }
         }
     }
@@ -60,12 +71,16 @@ class LinkStashViewModel(
         }
 
         viewModelScope.launch {
-            repository.enqueuePendingLink(normalizedUrl)
+            val wasQueued = repository.enqueuePendingLink(normalizedUrl)
             val pendingCount = repository.pendingCount()
             _uiState.update { state ->
                 state.copy(
                     pendingQueueCount = pendingCount,
-                    statusMessage = "Queued shared URL"
+                    statusMessage = if (wasQueued) {
+                        "Queued shared URL"
+                    } else {
+                        "URL already queued"
+                    }
                 )
             }
 
@@ -191,32 +206,81 @@ class LinkStashViewModel(
         super.onCleared()
     }
 
-    private fun runBusyAction(action: suspend () -> Unit) {
+    private fun runBusyAction(
+        keepSessionOnError: Boolean = uiState.value.isAuthenticated,
+        action: suspend () -> Unit
+    ) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            try {
-                action()
-            } catch (error: ApiException) {
-                if (error.error.code == ApiErrorCode.UNAUTHORIZED) {
-                    repository.clearSession()
-                    val pendingCount = repository.pendingCount()
-                    _uiState.value = LinkStashUiState(
-                        pendingQueueCount = pendingCount,
-                        statusMessage = "Session expired. Paste token again."
-                    )
-                } else {
-                    _uiState.update {
-                        it.copy(statusMessage = error.error.message)
-                    }
+            actionMutex.withLock {
+                _uiState.update { it.copy(isLoading = true) }
+                try {
+                    action()
+                } catch (error: Throwable) {
+                    handleFailure(error, keepSessionOnError)
+                } finally {
+                    _uiState.update { it.copy(isLoading = false) }
                 }
-            } catch (error: Exception) {
-                _uiState.update {
-                    it.copy(statusMessage = error.message ?: "Unexpected error")
-                }
-            } finally {
-                _uiState.update { it.copy(isLoading = false) }
             }
         }
+    }
+
+    private suspend fun handleFailure(
+        error: Throwable,
+        keepSessionOnError: Boolean
+    ) {
+        if (error is ApiException && error.error.code == ApiErrorCode.UNAUTHORIZED) {
+            repository.clearSession()
+            val pendingCount = repository.pendingCount()
+            _uiState.value = LinkStashUiState(
+                pendingQueueCount = pendingCount,
+                statusMessage = "Session expired. Paste token again."
+            )
+            return
+        }
+
+        val shouldRemainAuthenticated = keepSessionOnError || uiState.value.isAuthenticated
+        val statusMessage = when (error) {
+            is ApiException -> error.error.message
+            else -> connectionAwareMessage(error, shouldRemainAuthenticated)
+        }
+
+        _uiState.update {
+            it.copy(
+                isAuthenticated = shouldRemainAuthenticated,
+                statusMessage = statusMessage
+            )
+        }
+    }
+
+    private fun connectionAwareMessage(
+        error: Throwable,
+        isAuthenticated: Boolean
+    ): String {
+        val diagnostic = buildString {
+            append(error::class.simpleName.orEmpty())
+            append(' ')
+            append(error.message.orEmpty())
+        }.lowercase()
+
+        val looksLikeConnectionFailure = listOf(
+            "connect",
+            "connection",
+            "network",
+            "timeout",
+            "refused",
+            "unresolved",
+            "host"
+        ).any { diagnostic.contains(it) }
+
+        if (looksLikeConnectionFailure) {
+            return if (isAuthenticated) {
+                "Offline. Shared links will stay queued until the server is reachable."
+            } else {
+                "Can't reach the server right now. You can still queue links offline."
+            }
+        }
+
+        return error.message ?: "Unexpected error"
     }
 
     private suspend fun refreshAllData(statusMessage: String) {
