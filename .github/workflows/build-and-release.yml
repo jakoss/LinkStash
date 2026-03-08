@@ -1,0 +1,192 @@
+name: Build And Release
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/build-and-release.yml"
+      - "src/**"
+  push:
+    branches:
+      - "main"
+    tags:
+      - "v*"
+    paths:
+      - ".github/workflows/build-and-release.yml"
+      - "src/**"
+  workflow_dispatch:
+
+env:
+  GRADLE_ROOT: src
+  REGISTRY: ghcr.io
+  SERVER_IMAGE_NAME: linkstash-server
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build release APK
+        working-directory: ${{ env.GRADLE_ROOT }}
+        run: ./gradlew :androidApp:assembleRelease
+
+      - name: Prepare APK asset
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/android
+          asset_version="${GITHUB_REF_NAME:-${GITHUB_SHA::7}}"
+          asset_version="${asset_version//\//-}"
+          cp \
+            "${{ env.GRADLE_ROOT }}/androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk" \
+            "release-assets/android/linkstash-${asset_version}-android-release-unsigned.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: release-assets/android/*.apk
+          if-no-files-found: error
+
+  build-server-image:
+    name: Build Server Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.SERVER_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=ref,event=tag
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and publish server image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src
+          file: ./src/server/Dockerfile
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prepare server release assets
+        if: github.ref_type == 'tag'
+        env:
+          SERVER_DIGEST: ${{ steps.build.outputs.digest }}
+          SERVER_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image_ref="${{ env.REGISTRY }}/${owner}/${{ env.SERVER_IMAGE_NAME }}:${GITHUB_REF_NAME}"
+
+          mkdir -p release-assets/server
+          docker pull "${image_ref}"
+          docker save "${image_ref}" | gzip > "release-assets/server/linkstash-server-${GITHUB_REF_NAME}-linux-amd64.tar.gz"
+
+          cat > "release-assets/server/linkstash-server-${GITHUB_REF_NAME}-image.txt" <<EOF
+          Image: ${image_ref}
+          Digest: ${SERVER_DIGEST}
+
+          Published tags:
+          ${SERVER_TAGS}
+          EOF
+
+      - name: Upload server release assets
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-release-assets
+          path: release-assets/server/*
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    if: github.ref_type == 'tag'
+    needs:
+      - build-android
+      - build-server-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-release-apk
+          path: release-assets/android
+
+      - name: Download server release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: server-release-assets
+          path: release-assets/server
+
+      - name: Generate release notes
+        run: |
+          set -euo pipefail
+          owner="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          image_ref="${{ env.REGISTRY }}/${owner}/${{ env.SERVER_IMAGE_NAME }}:${GITHUB_REF_NAME}"
+
+          cat > release-notes.md <<EOF
+          ## Assets
+          - Android APK: unsigned release build from \`:androidApp:assembleRelease\`
+          - Server image archive: linux/amd64 Docker image tarball for the same tag
+
+          ## Container image
+          - GHCR: \`${image_ref}\`
+
+          ## Compose install
+          - Use \`src/server/compose.yaml\` with \`LINKSTASH_SERVER_IMAGE=${image_ref}\`.
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          generate_release_notes: true
+          files: |
+            release-assets/android/*.apk
+            release-assets/server/*.tar.gz
+            release-assets/server/*.txt

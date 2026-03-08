@@ -17,18 +17,39 @@ open class LinkStashRepository(
     private val config: LinkStashClientConfig
 ) {
     private var cachedBearerToken: String? = null
-
-    private val apiClient = LinkStashApiClient.create(
-        LinkStashApiClientConfig(
-            baseUrl = config.apiBaseUrl,
-            bearerTokenProvider = { cachedBearerToken }
-        )
-    )
+    private var currentServerUrl = apiBaseUrlToServerUrl(config.apiBaseUrl)
+    private var apiClient = createApiClient()
 
     open suspend fun hydrateSessionToken() {
+        sessionStore.readServerUrl()
+            ?.let(::normalizeServerUrl)
+            ?.let { persistedServerUrl ->
+                if (persistedServerUrl != currentServerUrl) {
+                    currentServerUrl = persistedServerUrl
+                    rebuildApiClient()
+                }
+            }
+
         cachedBearerToken = sessionStore.readBearerToken()
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+    }
+
+    open fun serverUrl(): String = currentServerUrl
+
+    open suspend fun updateServerUrl(rawServerUrl: String) {
+        val normalizedServerUrl = normalizeServerUrl(rawServerUrl)
+            ?: error("Server URL must start with http:// or https://")
+
+        if (normalizedServerUrl == currentServerUrl) {
+            return
+        }
+
+        currentServerUrl = normalizedServerUrl
+        sessionStore.writeServerUrl(normalizedServerUrl)
+        cachedBearerToken = null
+        sessionStore.clearBearerToken()
+        rebuildApiClient()
     }
 
     open fun hasSessionToken(): Boolean = !cachedBearerToken.isNullOrBlank()
@@ -122,6 +143,20 @@ open class LinkStashRepository(
 
     open fun close() {
         apiClient.close()
+    }
+
+    private fun createApiClient(): LinkStashApiClient {
+        return LinkStashApiClient.create(
+            LinkStashApiClientConfig(
+                baseUrl = serverUrlToApiBaseUrl(currentServerUrl),
+                bearerTokenProvider = { cachedBearerToken }
+            )
+        )
+    }
+
+    private fun rebuildApiClient() {
+        apiClient.close()
+        apiClient = createApiClient()
     }
 
     private fun resolveDefaultSpaceId(spaces: List<SpaceDto>): String? {

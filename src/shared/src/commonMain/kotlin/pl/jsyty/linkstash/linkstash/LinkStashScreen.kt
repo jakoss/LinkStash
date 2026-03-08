@@ -80,7 +80,7 @@ fun LinkStashApp(
 @Composable
 private fun LinkStashScreen(
     uiState: LinkStashUiState,
-    onUseBearerToken: (String) -> Unit,
+    onUseBearerToken: (String, String) -> Unit,
     onRefresh: () -> Unit,
     onSync: () -> Unit,
     onLogout: () -> Unit,
@@ -92,6 +92,7 @@ private fun LinkStashScreen(
 ) {
     var manualUrl by rememberSaveable { mutableStateOf("") }
     var manualBearerToken by rememberSaveable { mutableStateOf("") }
+    var manualServerUrl by rememberSaveable(uiState.serverUrl) { mutableStateOf(uiState.serverUrl) }
     var isOverflowMenuExpanded by remember { mutableStateOf(false) }
     var isUrlSheetVisible by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -205,10 +206,12 @@ private fun LinkStashScreen(
                 } else {
                     LoggedOutScreen(
                         uiState = uiState,
+                        manualServerUrl = manualServerUrl,
+                        onManualServerUrlChange = { manualServerUrl = it },
                         manualBearerToken = manualBearerToken,
                         onManualBearerTokenChange = { manualBearerToken = it },
                         onUseBearerToken = {
-                            onUseBearerToken(manualBearerToken)
+                            onUseBearerToken(manualBearerToken, manualServerUrl)
                             manualBearerToken = ""
                         }
                     )
@@ -266,6 +269,8 @@ private fun LinkStashScreen(
 @Composable
 private fun LoggedOutScreen(
     uiState: LinkStashUiState,
+    manualServerUrl: String,
+    onManualServerUrlChange: (String) -> Unit,
     manualBearerToken: String,
     onManualBearerTokenChange: (String) -> Unit,
     onUseBearerToken: () -> Unit
@@ -310,6 +315,14 @@ private fun LoggedOutScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
+                    value = manualServerUrl,
+                    onValueChange = onManualServerUrlChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Server URL") },
+                    placeholder = { Text("http://10.0.2.2:8080") },
+                    singleLine = true
+                )
+                OutlinedTextField(
                     value = manualBearerToken,
                     onValueChange = onManualBearerTokenChange,
                     modifier = Modifier.fillMaxWidth(),
@@ -319,7 +332,7 @@ private fun LoggedOutScreen(
                 Button(
                     onClick = onUseBearerToken,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = manualBearerToken.isNotBlank()
+                    enabled = manualServerUrl.isNotBlank() && manualBearerToken.isNotBlank()
                 ) {
                     Text("Use token")
                 }

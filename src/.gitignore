@@ -5,6 +5,7 @@
 xcuserdata
 !src/**/build/
 local.properties
+server/.env.compose
 .idea
 .DS_Store
 captures

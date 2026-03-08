@@ -41,6 +41,7 @@ class LinkStashViewModel(
             val hasSessionToken = repository.hasSessionToken()
             _uiState.update {
                 it.copy(
+                    serverUrl = repository.serverUrl(),
                     isAuthenticated = hasSessionToken,
                     pendingQueueCount = pendingCount
                 )
@@ -54,7 +55,14 @@ class LinkStashViewModel(
         }
     }
 
-    fun useBearerToken(rawToken: String) {
+    fun useBearerToken(rawToken: String, rawServerUrl: String) {
+        if (rawServerUrl.trim().isBlank()) {
+            _uiState.update {
+                it.copy(statusMessage = "Server URL is required")
+            }
+            return
+        }
+
         val normalizedToken = rawToken.trim()
         if (normalizedToken.isBlank()) {
             _uiState.update {
@@ -64,6 +72,7 @@ class LinkStashViewModel(
         }
 
         runBusyAction {
+            repository.updateServerUrl(rawServerUrl)
             repository.exchangeRaindropToken(normalizedToken)
             refreshAllData(statusMessage = "Logged in with token")
         }
@@ -224,6 +233,7 @@ class LinkStashViewModel(
             repository.clearSession()
             val pendingCount = repository.pendingCount()
             _uiState.value = LinkStashUiState(
+                serverUrl = repository.serverUrl(),
                 pendingQueueCount = pendingCount,
                 statusMessage = "Logged out"
             )
@@ -263,6 +273,7 @@ class LinkStashViewModel(
             repository.clearSession()
             val pendingCount = repository.pendingCount()
             _uiState.value = LinkStashUiState(
+                serverUrl = repository.serverUrl(),
                 pendingQueueCount = pendingCount,
                 statusMessage = "Session expired. Paste token again."
             )
@@ -277,6 +288,7 @@ class LinkStashViewModel(
 
         _uiState.update {
             it.copy(
+                serverUrl = repository.serverUrl(),
                 isAuthenticated = shouldRemainAuthenticated,
                 statusMessage = statusMessage
             )
@@ -337,6 +349,7 @@ class LinkStashViewModel(
 
         _uiState.update {
             it.copy(
+                serverUrl = repository.serverUrl(),
                 isAuthenticated = true,
                 user = user,
                 spaces = spaces,

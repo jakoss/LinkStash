@@ -1,0 +1,12 @@
+.gradle
+.idea
+.kotlin
+**/.DS_Store
+**/build/
+androidApp
+apiClient
+desktopApp
+iosApp
+local.properties
+server/.env.api-test
+server/.env.compose

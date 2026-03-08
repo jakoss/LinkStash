@@ -21,6 +21,27 @@ import pl.jsyty.linkstash.contracts.user.UserDto
 @OptIn(ExperimentalCoroutinesApi::class)
 class LinkStashViewModelTest {
     @Test
+    fun initializeExposesConfiguredServerUrl() = runViewModelTest { _, viewModel ->
+        assertEquals("http://localhost:8080", viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun loginUpdatesServerUrlBeforeAuth() = runViewModelTest(
+        authenticated = false,
+        serverUrl = "http://localhost:8080"
+    ) { repository, viewModel ->
+        viewModel.useBearerToken(
+            rawToken = "raindrop-token",
+            rawServerUrl = "https://demo.linkstash.dev"
+        )
+        advanceUntilIdle()
+
+        assertEquals("https://demo.linkstash.dev", repository.serverUrl())
+        assertEquals("https://demo.linkstash.dev", viewModel.uiState.value.serverUrl)
+        assertTrue(viewModel.uiState.value.isAuthenticated)
+    }
+
+    @Test
     fun syncingIncompleteLinksAddsThemToPendingMetadataIds() = runViewModelTest { repository, viewModel ->
         val incompleteLink = incompleteLink()
 
@@ -140,13 +161,19 @@ class LinkStashViewModelTest {
 
     private fun runViewModelTest(
         spaces: List<SpaceDto> = listOf(DEFAULT_SPACE),
+        authenticated: Boolean = true,
+        serverUrl: String = "http://localhost:8080",
         block: suspend TestScope.(FakeLinkStashRepository, LinkStashViewModel) -> Unit
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
 
         try {
-            val repository = FakeLinkStashRepository(spaces = spaces)
+            val repository = FakeLinkStashRepository(
+                spaces = spaces,
+                authenticated = authenticated,
+                currentServerUrl = serverUrl
+            )
             val viewModel = LinkStashViewModel(
                 repository = repository,
                 defaultSpaceTitle = DEFAULT_SPACE.title
@@ -160,7 +187,9 @@ class LinkStashViewModelTest {
     }
 
     private class FakeLinkStashRepository(
-        private val spaces: List<SpaceDto>
+        private val spaces: List<SpaceDto>,
+        private var authenticated: Boolean,
+        private var currentServerUrl: String
     ) : LinkStashRepository(
         sessionStore = NoOpSessionStore,
         pendingQueueStore = NoOpPendingQueueStore,
@@ -172,9 +201,15 @@ class LinkStashViewModelTest {
         private val latestListLinksResponse = mutableMapOf<String, LinksListResponse>()
         private val flushResults = ArrayDeque<List<LinkDto>>()
 
-        private var authenticated = true
-
         override suspend fun hydrateSessionToken() {
+        }
+
+        override fun serverUrl(): String = currentServerUrl
+
+        override suspend fun updateServerUrl(rawServerUrl: String) {
+            currentServerUrl = normalizeServerUrl(rawServerUrl)
+                ?: error("Server URL must start with http:// or https://")
+            authenticated = false
         }
 
         override fun hasSessionToken(): Boolean = authenticated
@@ -264,6 +299,11 @@ class LinkStashViewModelTest {
             override suspend fun readBearerToken(): String? = "bearer-token"
 
             override suspend fun writeBearerToken(token: String) {
+            }
+
+            override suspend fun readServerUrl(): String? = "http://localhost:8080"
+
+            override suspend fun writeServerUrl(serverUrl: String) {
             }
 
             override suspend fun clearBearerToken() {

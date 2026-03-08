@@ -18,6 +18,8 @@ data class PendingQueuedLink(
 interface LinkStashSessionStore {
     suspend fun readBearerToken(): String?
     suspend fun writeBearerToken(token: String)
+    suspend fun readServerUrl(): String?
+    suspend fun writeServerUrl(serverUrl: String)
     suspend fun clearBearerToken()
 }
 
@@ -29,6 +31,7 @@ interface LinkStashPendingQueueStore {
 }
 
 data class LinkStashUiState(
+    val serverUrl: String = "",
     val isAuthenticated: Boolean = false,
     val isLoading: Boolean = false,
     val user: UserDto? = null,
@@ -40,6 +43,28 @@ data class LinkStashUiState(
     val pendingQueueCount: Int = 0,
     val statusMessage: String = "Paste Raindrop token to sync and browse links"
 )
+
+fun normalizeServerUrl(rawServerUrl: String): String? {
+    val trimmed = rawServerUrl.trim().removeSuffix("/")
+    if (trimmed.isBlank()) {
+        return null
+    }
+    if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+        return null
+    }
+
+    return trimmed.removeSuffix("/v1")
+}
+
+fun serverUrlToApiBaseUrl(serverUrl: String): String {
+    val normalizedServerUrl = normalizeServerUrl(serverUrl)
+        ?: error("Server URL must start with http:// or https://")
+    return "$normalizedServerUrl/v1/"
+}
+
+fun apiBaseUrlToServerUrl(apiBaseUrl: String): String {
+    return normalizeServerUrl(apiBaseUrl) ?: apiBaseUrl.trim().removeSuffix("/")
+}
 
 fun needsMetadataPolling(link: LinkDto): Boolean {
     return link.previewImageUrl.isNullOrBlank() &&

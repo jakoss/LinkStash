@@ -1,0 +1,15 @@
+services:
+  server:
+    container_name: linkstash-server
+    image: ${LINKSTASH_SERVER_IMAGE:?Set LINKSTASH_SERVER_IMAGE in server/.env.compose}
+    pull_policy: always
+    restart: unless-stopped
+    env_file:
+      - .env.compose
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    volumes:
+      - linkstash-server-data:/data
+
+volumes:
+  linkstash-server-data:
