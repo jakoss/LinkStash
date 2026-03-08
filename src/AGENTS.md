@@ -45,3 +45,13 @@
   - update tests for changed behavior
   - delete tests for removed behavior
 - A backend change is not complete unless the relevant `:server:test` coverage is updated to match the new behavior.
+
+## Browser Automation
+
+Use `agent-browser` for web automation. Run `agent-browser --help` for all commands.
+
+Core workflow:
+1. `agent-browser open <url>` - Navigate to page
+2. `agent-browser snapshot -i` - Get interactive elements with refs (@e1, @e2)
+3. `agent-browser click @e1` / `fill @e2 "text"` - Interact using refs
+4. Re-snapshot after page changes
