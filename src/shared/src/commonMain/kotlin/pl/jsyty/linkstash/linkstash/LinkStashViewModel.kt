@@ -105,6 +105,16 @@ class LinkStashViewModel(
         }
     }
 
+    fun refreshIfAuthenticated() {
+        if (!uiState.value.isAuthenticated || uiState.value.isLoading) {
+            return
+        }
+
+        runBusyAction {
+            refreshAllData(statusMessage = "Refreshed")
+        }
+    }
+
     fun onNetworkAvailable() {
         val currentState = uiState.value
         if (!currentState.isAuthenticated || currentState.pendingQueueCount <= 0) {

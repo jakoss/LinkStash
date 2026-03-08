@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">LinkStash</string>
+    <string name="share_save_success_single">Saved</string>
+    <string name="share_save_success_multiple">Saved %1$d links</string>
+    <string name="share_save_no_link_found">No link found</string>
+    <string name="share_save_failure">Could not save</string>
 </resources>

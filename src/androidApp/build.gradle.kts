@@ -18,6 +18,7 @@ kotlin {
         implementation(projects.shared)
         implementation(libs.androidx.core.ktx)
         implementation(libs.androidx.activity.compose)
+        implementation(libs.androidx.work.runtime)
         implementation(libs.androidx.lifecycle.runtimeCompose)
         implementation(libs.androidx.lifecycle.viewmodelCompose)
         implementation(libs.compose.runtime)
@@ -38,6 +39,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     packaging {
         resources {
@@ -53,4 +55,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+}
+
+dependencies {
+    add("testImplementation", libs.junit)
+    add("androidTestImplementation", libs.androidx.test.core)
+    add("androidTestImplementation", libs.androidx.testExt.junit)
+    add("androidTestImplementation", libs.androidx.espresso.core)
+    add("androidTestImplementation", libs.androidx.work.testing)
 }

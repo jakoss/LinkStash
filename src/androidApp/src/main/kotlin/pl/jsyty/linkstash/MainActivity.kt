@@ -1,7 +1,6 @@
 package pl.jsyty.linkstash
 
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
@@ -33,12 +32,11 @@ class MainActivity : ComponentActivity() {
             viewModel.onNetworkAvailable()
         }
     }
-    private var lastHandledSharedPayload: String? = null
+    private var hasStartedOnce = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        lastHandledSharedPayload = savedInstanceState?.getString(LAST_HANDLED_SHARED_PAYLOAD_KEY)
 
         setContent {
             val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -57,19 +55,6 @@ class MainActivity : ComponentActivity() {
                 LinkStashApp(viewModel = viewModel)
             }
         }
-
-        handleIncomingIntent(intent)
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleIncomingIntent(intent)
-    }
-
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString(LAST_HANDLED_SHARED_PAYLOAD_KEY, lastHandledSharedPayload)
     }
 
     override fun onStart() {
@@ -77,6 +62,10 @@ class MainActivity : ComponentActivity() {
         runCatching {
             connectivityManager?.registerDefaultNetworkCallback(networkCallback)
         }
+        if (hasStartedOnce) {
+            viewModel.refreshIfAuthenticated()
+        }
+        hasStartedOnce = true
     }
 
     override fun onStop() {
@@ -84,67 +73,6 @@ class MainActivity : ComponentActivity() {
             connectivityManager?.unregisterNetworkCallback(networkCallback)
         }
         super.onStop()
-    }
-
-    private fun handleIncomingIntent(intent: Intent?) {
-        if (intent == null) return
-        val sharedUrls = extractSharedUrls(intent)
-        if (sharedUrls.isEmpty()) return
-
-        val payloadSignature = sharedUrls.joinToString(separator = "\n")
-        if (payloadSignature == lastHandledSharedPayload) {
-            return
-        }
-
-        lastHandledSharedPayload = payloadSignature
-        sharedUrls.forEach(viewModel::onSharedUrlReceived)
-    }
-
-    private fun extractSharedUrls(intent: Intent): List<String> {
-        if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) {
-            return emptyList()
-        }
-
-        val rawCandidates = buildList {
-            intent.dataString?.let(::add)
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let(::add)
-            intent.getStringExtra(Intent.EXTRA_HTML_TEXT)?.let(::add)
-            intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString()?.let(::add)
-
-            intent.clipData?.let { clipData ->
-                repeat(clipData.itemCount) { index ->
-                    val item = clipData.getItemAt(index)
-                    item.uri?.toString()?.let(::add)
-                    item.coerceToText(this@MainActivity)?.toString()?.let(::add)
-                }
-            }
-
-            intent.extras?.keySet().orEmpty().forEach { key ->
-                val value = intent.extras?.get(key)
-                when (value) {
-                    is String -> add(value)
-                    is CharSequence -> add(value.toString())
-                    is ArrayList<*> -> value.filterIsInstance<CharSequence>().mapTo(this) { it.toString() }
-                }
-            }
-        }
-
-        return rawCandidates
-            .flatMap(::extractHttpUrls)
-            .distinct()
-    }
-
-    private fun extractHttpUrls(raw: String): List<String> {
-        return HTTP_URL_REGEX.findAll(raw)
-            .map { match -> match.value.trimEnd { it in TRAILING_URL_PUNCTUATION } }
-            .filter { it.startsWith(prefix = "http://", ignoreCase = true) || it.startsWith(prefix = "https://", ignoreCase = true) }
-            .toList()
-    }
-
-    private companion object {
-        const val LAST_HANDLED_SHARED_PAYLOAD_KEY = "lastHandledSharedPayload"
-        val HTTP_URL_REGEX = Regex("""https?://[^\s<>"']+""", RegexOption.IGNORE_CASE)
-        val TRAILING_URL_PUNCTUATION = charArrayOf('.', ',', ';', ':', '!', '?', ')', ']', '}')
     }
 }
 
