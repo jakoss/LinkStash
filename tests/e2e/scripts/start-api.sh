@@ -5,7 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd "$SCRIPT_DIR/../../../src" && pwd)"
 
 if [[ -z "${DB_URL:-}" ]]; then
-  temp_db_file="$(mktemp /tmp/linkstash-e2e.XXXXXX.sqlite)"
+  temp_db_file="$(mktemp "${TMPDIR:-/tmp}/linkstash-e2e.XXXXXX")"
+  mv "$temp_db_file" "${temp_db_file}.sqlite"
+  temp_db_file="${temp_db_file}.sqlite"
   export DB_URL="jdbc:sqlite:$temp_db_file"
   trap 'rm -f "$temp_db_file"' EXIT
 else

@@ -1,5 +1,4 @@
-import { expect, test, type Download, type Page, type Response } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { expect, test, type Page, type Response } from "@playwright/test";
 
 const raindropToken = process.env.E2E_RAINDROP_TOKEN ?? "";
 const apiBaseUrl = process.env.E2E_API_BASE_URL ?? "http://127.0.0.1:8080";
@@ -34,6 +33,22 @@ test.describe("web compose e2e", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize(viewport);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
+      origin: apiBaseUrl,
+    });
+    await page.addInitScript(() => {
+      const clipboard = navigator.clipboard;
+      if (!clipboard?.writeText) {
+        return;
+      }
+
+      const originalWriteText = clipboard.writeText.bind(clipboard);
+      (window as typeof window & { __lastCopiedText?: string }).__lastCopiedText = "";
+      clipboard.writeText = async (text: string) => {
+        (window as typeof window & { __lastCopiedText?: string }).__lastCopiedText = text;
+        return await originalWriteText(text);
+      };
+    });
   });
 
   test("restores the cookie session after reload", async ({ page }) => {
@@ -97,10 +112,7 @@ test.describe("web compose e2e", () => {
     await waitForApi(page, (response) => isApi(response, "GET", "/v1/me", 200));
 
     const deleteCandidate = await createLink(page, inbox!.id, deleteUrl);
-    const download = await exportLinks(page);
-    const downloadPath = await download.path();
-    expect(downloadPath).toBeTruthy();
-    const exportBody = await readFile(downloadPath!, "utf8");
+    const exportBody = await exportLinks(page);
     expect(exportBody).toContain(deleteUrl);
 
     const deleteStatus = await deleteLink(page, deleteCandidate.id);
@@ -228,10 +240,12 @@ async function deleteLink(page: Page, linkId: string): Promise<number> {
   return lastStatus;
 }
 
-async function exportLinks(page: Page): Promise<Download> {
-  const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export links" }).click({ force: true });
-  return downloadPromise;
+async function exportLinks(page: Page): Promise<string> {
+  await page.getByRole("button", { name: "Copy links" }).click({ force: true });
+  await expect
+    .poll(async () => await page.evaluate(() => (window as typeof window & { __lastCopiedText?: string }).__lastCopiedText ?? ""))
+    .not.toBe("");
+  return await page.evaluate(() => (window as typeof window & { __lastCopiedText?: string }).__lastCopiedText ?? "");
 }
 
 async function listSpaces(page: Page): Promise<SpaceDto[]> {
