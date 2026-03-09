@@ -5,6 +5,7 @@
   "scripts": {
     "test": "bunx playwright test",
     "test:auth": "bunx playwright test specs/auth.e2e.spec.ts",
+    "test:web": "bunx playwright test specs/web.e2e.spec.ts",
     "test:headed": "bunx playwright test --headed",
     "install:browsers": "bunx playwright install chromium"
   },

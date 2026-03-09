@@ -35,5 +35,6 @@ plugins {
 include(":shared")
 include(":contracts")
 include(":server")
+include(":webApp")
 include(":androidApp")
 include(":desktopApp")

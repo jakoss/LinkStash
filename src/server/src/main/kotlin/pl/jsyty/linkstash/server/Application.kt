@@ -6,13 +6,16 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
+import io.ktor.server.http.content.staticResources
 import io.ktor.server.plugins.callid.CallId
 import io.ktor.server.plugins.callid.callId
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.cors.routing.CORS
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
+import io.ktor.server.routing.head
 import io.ktor.server.routing.routing
 import java.util.UUID
 import org.slf4j.event.Level
@@ -20,6 +23,8 @@ import pl.jsyty.linkstash.contracts.LinkStashJson
 import pl.jsyty.linkstash.server.auth.configureAuthModule
 import pl.jsyty.linkstash.server.config.AppConfig
 import pl.jsyty.linkstash.server.db.DatabaseFactory
+
+private const val webUiIndexResourcePath = "web/index.html"
 
 fun Application.linkStashModule(config: AppConfig = AppConfig.fromEnv()) {
     val database = DatabaseFactory.connectAndMigrate(config)
@@ -47,10 +52,9 @@ fun Application.linkStashModule(config: AppConfig = AppConfig.fromEnv()) {
         allowMethod(HttpMethod.Patch)
         allowMethod(HttpMethod.Delete)
         allowMethod(HttpMethod.Options)
-        allowHeader(HttpHeaders.Authorization)
-        allowHeader(HttpHeaders.ContentType)
-        allowHeader(HttpHeaders.XRequestId)
-        allowCredentials = true
+        config.corsAllowedHeaders.forEach(::allowHeader)
+        config.corsExposedHeaders.forEach(::exposeHeader)
+        allowCredentials = config.corsAllowCredentials
         config.corsAllowedOrigins.forEach { origin ->
             val trimmed = origin.trim().removeSuffix("/")
             val scheme = when {
@@ -71,5 +75,28 @@ fun Application.linkStashModule(config: AppConfig = AppConfig.fromEnv()) {
         get("/healthz") {
             call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
         }
+
+        get("/") {
+            call.respondBundledWebUi()
+        }
+
+        head("/") {
+            call.respondBundledWebUi()
+        }
+
+        staticResources("/", "web")
     }
+}
+
+private fun loadClasspathResourceText(path: String): String {
+    val classLoader = Thread.currentThread().contextClassLoader
+    return classLoader.getResourceAsStream(path)?.bufferedReader()?.use { it.readText() }
+        ?: error("Missing bundled web resource: $path")
+}
+
+private suspend fun io.ktor.server.application.ApplicationCall.respondBundledWebUi() {
+    respondText(
+        text = loadClasspathResourceText(webUiIndexResourcePath),
+        contentType = io.ktor.http.ContentType.Text.Html
+    )
 }

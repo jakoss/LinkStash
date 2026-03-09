@@ -9,6 +9,7 @@ COPY gradle gradle
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY contracts contracts
 COPY server server
+COPY webApp webApp
 
 RUN mkdir -p shared androidApp desktopApp
 

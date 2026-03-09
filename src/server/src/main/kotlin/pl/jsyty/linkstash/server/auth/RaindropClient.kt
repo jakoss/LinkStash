@@ -16,6 +16,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.ContentConvertException
+import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -150,9 +151,11 @@ class RaindropClient(
     private val httpClient: HttpClient
 ) {
     suspend fun fetchCurrentUser(accessToken: String): RaindropUserPayload {
-        val response = httpClient.get("${config.raindropApiBaseUrl}/user") {
+        val response = executeWithRateLimitRetry {
+            httpClient.get("${config.raindropApiBaseUrl}/user") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -175,9 +178,11 @@ class RaindropClient(
     }
 
     suspend fun getCollectionById(accessToken: String, collectionId: String): RaindropCollectionPayload? {
-        val response = httpClient.get("${config.raindropApiBaseUrl}/collection/$collectionId") {
+        val response = executeWithRateLimitRetry {
+            httpClient.get("${config.raindropApiBaseUrl}/collection/$collectionId") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -200,9 +205,11 @@ class RaindropClient(
     }
 
     suspend fun listCollections(accessToken: String): List<RaindropCollectionPayload> {
-        val response = httpClient.get("${config.raindropApiBaseUrl}/collections") {
+        val response = executeWithRateLimitRetry {
+            httpClient.get("${config.raindropApiBaseUrl}/collections") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -223,9 +230,11 @@ class RaindropClient(
         accessToken: String,
         parentCollectionId: String
     ): List<RaindropCollectionPayload> {
-        val response = httpClient.get("${config.raindropApiBaseUrl}/collections/childrens") {
+        val response = executeWithRateLimitRetry {
+            httpClient.get("${config.raindropApiBaseUrl}/collections/childrens") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -260,11 +269,13 @@ class RaindropClient(
             }
         }
 
-        val response = httpClient.post("${config.raindropApiBaseUrl}/collection") {
+        val response = executeWithRateLimitRetry {
+            httpClient.post("${config.raindropApiBaseUrl}/collection") {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
             setBody(requestBody)
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -291,11 +302,13 @@ class RaindropClient(
             put("title", title)
         }
 
-        val response = httpClient.put("${config.raindropApiBaseUrl}/collection/$collectionId") {
+        val response = executeWithRateLimitRetry {
+            httpClient.put("${config.raindropApiBaseUrl}/collection/$collectionId") {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
             setBody(requestBody)
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -321,9 +334,11 @@ class RaindropClient(
         accessToken: String,
         collectionId: String
     ): Boolean {
-        val response = httpClient.delete("${config.raindropApiBaseUrl}/collection/$collectionId") {
+        val response = executeWithRateLimitRetry {
+            httpClient.delete("${config.raindropApiBaseUrl}/collection/$collectionId") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -350,12 +365,14 @@ class RaindropClient(
         page: Int,
         perPage: Int
     ): List<RaindropRaindropPayload> {
-        val response = httpClient.get("${config.raindropApiBaseUrl}/raindrops/$collectionId") {
+        val response = executeWithRateLimitRetry {
+            httpClient.get("${config.raindropApiBaseUrl}/raindrops/$collectionId") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
             parameter("page", page)
             parameter("perpage", perPage)
             parameter("sort", "-created")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -388,11 +405,13 @@ class RaindropClient(
             put("pleaseParse", buildJsonObject {})
         }
 
-        val response = httpClient.post("${config.raindropApiBaseUrl}/raindrop") {
+        val response = executeWithRateLimitRetry {
+            httpClient.post("${config.raindropApiBaseUrl}/raindrop") {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
             setBody(requestBody)
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -411,9 +430,11 @@ class RaindropClient(
     }
 
     suspend fun getRaindropById(accessToken: String, raindropId: String): RaindropRaindropPayload? {
-        val response = httpClient.get("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
+        val response = executeWithRateLimitRetry {
+            httpClient.get("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -449,11 +470,13 @@ class RaindropClient(
             )
         }
 
-        val response = httpClient.put("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
+        val response = executeWithRateLimitRetry {
+            httpClient.put("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
             contentType(ContentType.Application.Json)
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
             setBody(requestBody)
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -479,9 +502,11 @@ class RaindropClient(
         accessToken: String,
         raindropId: String
     ): Boolean {
-        val response = httpClient.delete("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
+        val response = executeWithRateLimitRetry {
+            httpClient.delete("${config.raindropApiBaseUrl}/raindrop/$raindropId") {
             accept(ContentType.Application.Json)
             header(HttpHeaders.Authorization, "Bearer $accessToken")
+            }
         }
 
         if (response.status == HttpStatusCode.Unauthorized) {
@@ -502,6 +527,34 @@ class RaindropClient(
         return true
     }
 
+}
+
+private const val RAINDROP_MAX_RATE_LIMIT_RETRIES = 3
+private const val RAINDROP_BASE_RETRY_DELAY_MS = 750L
+private const val RAINDROP_MAX_RETRY_DELAY_MS = 3_000L
+
+private suspend fun executeWithRateLimitRetry(
+    request: suspend () -> io.ktor.client.statement.HttpResponse
+): io.ktor.client.statement.HttpResponse {
+    repeat(RAINDROP_MAX_RATE_LIMIT_RETRIES - 1) { attempt ->
+        val response = request()
+        if (response.status != HttpStatusCode.TooManyRequests) {
+            return response
+        }
+
+        response.bodyAsTextSafely()
+        delay(response.retryDelayMillisOrNull() ?: ((attempt + 1) * RAINDROP_BASE_RETRY_DELAY_MS))
+    }
+
+    return request()
+}
+
+private fun io.ktor.client.statement.HttpResponse.retryDelayMillisOrNull(): Long? {
+    return headers[HttpHeaders.RetryAfter]
+        ?.trim()
+        ?.toLongOrNull()
+        ?.times(1_000L)
+        ?.coerceAtMost(RAINDROP_MAX_RETRY_DELAY_MS)
 }
 
 private suspend fun io.ktor.client.statement.HttpResponse.bodyAsTextSafely(): String {

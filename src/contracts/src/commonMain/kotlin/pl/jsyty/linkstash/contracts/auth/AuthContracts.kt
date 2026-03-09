@@ -19,5 +19,11 @@ data class AuthRaindropTokenExchangeRequest(
 data class AuthExchangeResponse(
     val user: UserDto,
     val bearerToken: String? = null,
-    val bearerTokenExpiresAtEpochSeconds: Long? = null
+    val bearerTokenExpiresAtEpochSeconds: Long? = null,
+    val csrfToken: String? = null
+)
+
+@Serializable
+data class AuthCsrfTokenResponse(
+    val csrfToken: String
 )

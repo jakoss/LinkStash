@@ -7,6 +7,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.delete
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -24,6 +25,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import org.junit.Assume.assumeTrue
 import pl.jsyty.linkstash.contracts.LinkStashJson
+import pl.jsyty.linkstash.contracts.auth.AuthCsrfTokenResponse
 import pl.jsyty.linkstash.contracts.auth.AuthExchangeResponse
 import pl.jsyty.linkstash.contracts.auth.AuthRaindropTokenExchangeRequest
 import pl.jsyty.linkstash.contracts.auth.AuthSessionMode
@@ -35,6 +37,7 @@ abstract class ApiTestBase {
         const val HEALTHZ_PATH = "/healthz"
         const val V1_PATH = "/v1"
         const val AUTH_RAINDROP_TOKEN_PATH = "$V1_PATH/auth/raindrop/token"
+        const val AUTH_CSRF_PATH = "$V1_PATH/auth/csrf"
         const val ME_PATH = "$V1_PATH/me"
         const val SPACES_PATH = "$V1_PATH/spaces"
         const val LINKS_PATH = "$V1_PATH/links"
@@ -44,6 +47,11 @@ abstract class ApiTestBase {
     protected data class BearerSession(
         val userId: String,
         val bearerToken: String
+    )
+
+    protected data class CookieSession(
+        val userId: String,
+        val csrfToken: String
     )
 
     protected fun spacePath(spaceId: String): String = "$SPACES_PATH/$spaceId"
@@ -90,6 +98,43 @@ abstract class ApiTestBase {
             userId = exchangeBody.user.id,
             bearerToken = bearerToken
         )
+    }
+
+    protected suspend fun authenticateCookieSession(client: HttpClient): CookieSession {
+        val exchangeResponse = requestWithUpstreamRetry {
+            client.post(AUTH_RAINDROP_TOKEN_PATH) {
+                jsonBody()
+                setBody(
+                    AuthRaindropTokenExchangeRequest(
+                        accessToken = requireRaindropToken(),
+                        sessionMode = AuthSessionMode.COOKIE
+                    )
+                )
+            }
+        }
+
+        assertEquals(HttpStatusCode.OK, exchangeResponse.status)
+        val exchangeBody = exchangeResponse.body<AuthExchangeResponse>()
+        assertTrue(exchangeBody.user.id.isNotBlank())
+        val csrfToken = assertNotNull(exchangeBody.csrfToken)
+        assertTrue(csrfToken.isNotBlank())
+
+        return CookieSession(
+            userId = exchangeBody.user.id,
+            csrfToken = csrfToken
+        )
+    }
+
+    protected suspend fun fetchCookieCsrfToken(client: HttpClient): String {
+        val response = client.get(AUTH_CSRF_PATH)
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.body<AuthCsrfTokenResponse>()
+        assertTrue(body.csrfToken.isNotBlank())
+        return body.csrfToken
+    }
+
+    protected fun HttpRequestBuilder.csrf(csrfToken: String) {
+        header("X-CSRF-Token", csrfToken)
     }
 
     protected suspend fun cleanupLinkIfPresent(

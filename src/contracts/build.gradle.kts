@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -35,6 +36,11 @@ kotlin {
         nodejs()
     }
 
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+    }
+
     sourceSets {
         commonMain {
             kotlin.srcDir("build/generated/ksp/metadata/commonMain/kotlin")
@@ -62,6 +68,9 @@ kotlin {
         jsMain.dependencies {
             implementation(libs.ktor.client.js)
         }
+        wasmJsMain.dependencies {
+            implementation(libs.ktor.client.js)
+        }
     }
 }
 
@@ -69,7 +78,7 @@ dependencies {
     add("kspCommonMainMetadata", libs.ktorfit.ksp)
 }
 
-tasks.matching { it.name in setOf("compileKotlinJvm", "compileKotlinJs", "compileAndroidMain") }
+tasks.matching { it.name in setOf("compileKotlinJvm", "compileKotlinJs", "compileKotlinWasmJs", "compileAndroidMain") }
     .configureEach {
         dependsOn("kspCommonMainKotlinMetadata")
     }

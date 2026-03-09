@@ -7,6 +7,7 @@ import de.jensklingenberg.ktorfit.http.PATCH
 import de.jensklingenberg.ktorfit.http.POST
 import de.jensklingenberg.ktorfit.http.Path
 import de.jensklingenberg.ktorfit.http.Query
+import pl.jsyty.linkstash.contracts.auth.AuthCsrfTokenResponse
 import pl.jsyty.linkstash.contracts.auth.AuthExchangeResponse
 import pl.jsyty.linkstash.contracts.auth.AuthRaindropTokenExchangeRequest
 import pl.jsyty.linkstash.contracts.link.LinkCreateRequest
@@ -22,6 +23,9 @@ import pl.jsyty.linkstash.contracts.user.UserDto
 interface AuthApi {
     @POST("auth/raindrop/token")
     suspend fun exchangeRaindropToken(@Body request: AuthRaindropTokenExchangeRequest): AuthExchangeResponse
+
+    @GET("auth/csrf")
+    suspend fun csrfToken(): AuthCsrfTokenResponse
 
     @POST("auth/logout")
     suspend fun logout(): Unit

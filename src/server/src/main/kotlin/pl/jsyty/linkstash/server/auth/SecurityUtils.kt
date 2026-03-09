@@ -67,4 +67,11 @@ fun ByteArray.toBase64Url(): String = Base64.getUrlEncoder().withoutPadding().en
 
 fun String.fromBase64Url(): ByteArray = Base64.getUrlDecoder().decode(this)
 
+fun constantTimeEquals(left: String, right: String): Boolean {
+    return MessageDigest.isEqual(
+        left.toByteArray(StandardCharsets.UTF_8),
+        right.toByteArray(StandardCharsets.UTF_8)
+    )
+}
+
 private fun sha256(bytes: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(bytes)

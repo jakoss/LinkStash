@@ -13,17 +13,35 @@ data class AppConfig(
     val raindropApiBaseUrl: String,
     val linkstashRootCollectionTitle: String,
     val linkstashDefaultSpaceTitle: String,
-    val corsAllowedOrigins: List<String>
+    val corsAllowedOrigins: List<String>,
+    val corsAllowedHeaders: List<String>,
+    val corsExposedHeaders: List<String>,
+    val corsAllowCredentials: Boolean,
+    val csrfHeaderName: String
 ) {
     companion object {
         private val defaultCorsOrigins = listOf(
             "http://localhost:5173",
             "http://127.0.0.1:5173",
+            "http://localhost:8081",
+            "http://127.0.0.1:8081",
             "http://localhost:8080",
             "http://127.0.0.1:8080"
         )
 
+        private val defaultCorsAllowedHeaders = listOf(
+            "Authorization",
+            "Content-Type",
+            "X-Request-Id",
+            "X-CSRF-Token"
+        )
+
+        private val defaultCorsExposedHeaders = listOf(
+            "X-Request-Id"
+        )
+
         fun fromEnv(env: Map<String, String> = System.getenv()): AppConfig {
+            val csrfHeaderName = env["CSRF_HEADER_NAME"]?.ifBlank { null } ?: "X-CSRF-Token"
             return AppConfig(
                 host = env["HOST"]?.ifBlank { null } ?: "0.0.0.0",
                 port = env["PORT"]?.toIntOrNull() ?: 8080,
@@ -38,7 +56,11 @@ data class AppConfig(
                     ?: "https://api.raindrop.io/rest/v1",
                 linkstashRootCollectionTitle = env["LINKSTASH_ROOT_COLLECTION_TITLE"]?.ifBlank { null } ?: "LinkStash",
                 linkstashDefaultSpaceTitle = env["LINKSTASH_DEFAULT_SPACE_TITLE"]?.ifBlank { null } ?: "Inbox",
-                corsAllowedOrigins = parseCorsOrigins(env["CORS_ALLOWED_ORIGINS"])
+                corsAllowedOrigins = parseList(env["CORS_ALLOWED_ORIGINS"], defaultCorsOrigins),
+                corsAllowedHeaders = parseList(env["CORS_ALLOWED_HEADERS"], defaultCorsAllowedHeaders),
+                corsExposedHeaders = parseList(env["CORS_EXPOSED_HEADERS"], defaultCorsExposedHeaders),
+                corsAllowCredentials = parseBoolean(env["CORS_ALLOW_CREDENTIALS"]) ?: true,
+                csrfHeaderName = csrfHeaderName
             )
         }
 
@@ -47,15 +69,15 @@ data class AppConfig(
                 ?: error("Missing required environment variable: $name")
         }
 
-        private fun parseCorsOrigins(rawValue: String?): List<String> {
-            if (rawValue.isNullOrBlank()) return defaultCorsOrigins
+        private fun parseList(rawValue: String?, defaultValue: List<String>): List<String> {
+            if (rawValue.isNullOrBlank()) return defaultValue
 
             return rawValue.split(',')
                 .asSequence()
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
                 .toList()
-                .ifEmpty { defaultCorsOrigins }
+                .ifEmpty { defaultValue }
         }
 
         private fun parseBoolean(value: String?): Boolean? {

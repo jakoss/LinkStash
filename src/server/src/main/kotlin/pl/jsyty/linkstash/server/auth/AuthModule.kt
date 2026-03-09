@@ -3,6 +3,7 @@ package pl.jsyty.linkstash.server.auth
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
@@ -34,6 +35,7 @@ import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import org.jetbrains.exposed.v1.jdbc.Database
 import pl.jsyty.linkstash.contracts.LinkStashJson
+import pl.jsyty.linkstash.contracts.auth.AuthCsrfTokenResponse
 import pl.jsyty.linkstash.contracts.auth.AuthExchangeResponse
 import pl.jsyty.linkstash.contracts.auth.AuthRaindropTokenExchangeRequest
 import pl.jsyty.linkstash.contracts.auth.AuthSessionMode
@@ -80,6 +82,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
             raindropClient = raindropClient
         )
     )
+    val csrfTokenHasher = TokenHasher("${config.sessionSecret}:csrf")
 
     install(StatusPages) {
         exception<AuthValidationException> { call, error ->
@@ -176,12 +179,40 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                     AuthExchangeResponse(
                         user = result.user,
                         bearerToken = if (result.sessionMode == AuthSessionMode.BEARER) result.sessionToken else null,
-                        bearerTokenExpiresAtEpochSeconds = result.sessionExpiresAtEpochSeconds
+                        bearerTokenExpiresAtEpochSeconds = result.sessionExpiresAtEpochSeconds,
+                        csrfToken = if (result.sessionMode == AuthSessionMode.COOKIE) {
+                            csrfTokenHasher.hash("csrf:${result.sessionToken}")
+                        } else {
+                            null
+                        }
                     )
                 )
             }
 
             authenticate("auth-session", "auth-bearer", strategy = AuthenticationStrategy.FirstSuccessful) {
+                get("/auth/csrf") {
+                    if (call.hasBearerAuthorizationHeader()) {
+                        return@get call.respondApiError(
+                            status = HttpStatusCode.Unauthorized,
+                            code = ApiErrorCode.UNAUTHORIZED,
+                            message = "Cookie authentication required"
+                        )
+                    }
+
+                    val principal = call.principal<LinkStashPrincipal>()
+                        ?: return@get call.respondApiError(
+                            status = HttpStatusCode.Unauthorized,
+                            code = ApiErrorCode.UNAUTHORIZED,
+                            message = "Cookie authentication required"
+                        )
+
+                    call.respond(
+                        AuthCsrfTokenResponse(
+                            csrfToken = csrfTokenHasher.hash("csrf:${principal.token}")
+                        )
+                    )
+                }
+
                 get("/me") {
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@get call.respondApiError(
@@ -212,6 +243,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                 }
 
                 post("/spaces") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@post call.respondApiError(
                             status = HttpStatusCode.Unauthorized,
@@ -224,6 +256,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                 }
 
                 patch("/spaces/{spaceId}") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@patch call.respondApiError(
                             status = HttpStatusCode.Unauthorized,
@@ -238,6 +271,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                 }
 
                 delete("/spaces/{spaceId}") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@delete call.respondApiError(
                             status = HttpStatusCode.Unauthorized,
@@ -268,6 +302,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                 }
 
                 post("/spaces/{spaceId}/links") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@post call.respondApiError(
                             status = HttpStatusCode.Unauthorized,
@@ -283,6 +318,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                 }
 
                 patch("/links/{linkId}") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@patch call.respondApiError(
                             status = HttpStatusCode.Unauthorized,
@@ -298,6 +334,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                 }
 
                 delete("/links/{linkId}") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@delete call.respondApiError(
                             status = HttpStatusCode.Unauthorized,
@@ -313,6 +350,7 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                 }
 
                 post("/auth/logout") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
                     val principal = call.principal<LinkStashPrincipal>()
                         ?: return@post call.respondApiError(
                             status = HttpStatusCode.Unauthorized,
@@ -327,6 +365,30 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
             }
         }
     }
+}
+
+private fun io.ktor.server.application.ApplicationCall.requireCsrfIfCookieAuth(
+    config: AppConfig,
+    csrfTokenHasher: TokenHasher
+) {
+    if (hasBearerAuthorizationHeader()) {
+        return
+    }
+
+    val principal = principal<LinkStashPrincipal>() ?: return
+    val providedToken = request.headers[config.csrfHeaderName]
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: throw AuthValidationException("Missing CSRF token")
+    val expectedToken = csrfTokenHasher.hash("csrf:${principal.token}")
+    if (!constantTimeEquals(providedToken, expectedToken)) {
+        throw AuthValidationException("Invalid CSRF token")
+    }
+}
+
+private fun io.ktor.server.application.ApplicationCall.hasBearerAuthorizationHeader(): Boolean {
+    val authorizationHeader = request.headers[HttpHeaders.Authorization] ?: return false
+    return authorizationHeader.trim().startsWith("Bearer ", ignoreCase = true)
 }
 
 private suspend fun io.ktor.server.application.ApplicationCall.respondApiError(

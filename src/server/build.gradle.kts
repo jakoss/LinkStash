@@ -1,6 +1,8 @@
 import java.io.File
 import java.util.Properties
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.Sync
+import org.gradle.language.jvm.tasks.ProcessResources
 
 plugins {
     alias(libs.plugins.kotlinJvm)
@@ -14,6 +16,14 @@ kotlin {
 
 application {
     mainClass = "pl.jsyty.linkstash.server.MainKt"
+}
+
+val bundleWebApp by tasks.registering(Sync::class) {
+    group = "build"
+    description = "Builds the wasm web app and bundles it into the server resources."
+    dependsOn(":webApp:wasmJsBrowserDistribution")
+    from(project(":webApp").layout.buildDirectory.dir("dist/wasmJs/productionExecutable"))
+    into(layout.buildDirectory.dir("generated/webApp"))
 }
 
 dependencies {
@@ -42,6 +52,13 @@ dependencies {
     testImplementation(libs.ktor.server.testHost)
     testImplementation(libs.kotlin.testJunit)
     testImplementation(libs.junit)
+}
+
+tasks.named<ProcessResources>("processResources") {
+    dependsOn(bundleWebApp)
+    from(bundleWebApp) {
+        into("web")
+    }
 }
 
 tasks.register<JavaExec>("runServerLocal") {
