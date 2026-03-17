@@ -20,6 +20,8 @@ RUN mkdir -p shared androidApp desktopApp
 RUN chmod +x gradlew
 
 RUN --mount=type=cache,target=/root/.gradle \
+    rm -rf /root/.gradle/yarn \
+    && \
     ./gradlew --no-daemon :server:installDist
 
 FROM eclipse-temurin:25-jre
