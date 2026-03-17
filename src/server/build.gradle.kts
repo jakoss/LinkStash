@@ -18,11 +18,26 @@ application {
     mainClass = "pl.jsyty.linkstash.server.MainKt"
 }
 
+val isLocalServerRun = gradle.startParameter.taskNames.any { taskName ->
+    taskName == "run" ||
+        taskName.endsWith(":run") ||
+        taskName == "runServerLocal" ||
+        taskName.endsWith(":runServerLocal")
+}
+
 val bundleWebApp by tasks.registering(Sync::class) {
     group = "build"
     description = "Builds the wasm web app and bundles it into the server resources."
-    dependsOn(":webApp:wasmJsBrowserDistribution")
-    from(project(":webApp").layout.buildDirectory.dir("dist/wasmJs/productionExecutable"))
+
+    if (isLocalServerRun) {
+        dependsOn(":webApp:wasmJsBrowserDevelopmentWebpack")
+        from(project(":webApp").layout.buildDirectory.dir("kotlin-webpack/wasmJs/developmentExecutable"))
+        from(project(":webApp").layout.buildDirectory.file("processedResources/wasmJs/main/index.html"))
+    } else {
+        dependsOn(":webApp:wasmJsBrowserDistribution")
+        from(project(":webApp").layout.buildDirectory.dir("dist/wasmJs/productionExecutable"))
+    }
+
     into(layout.buildDirectory.dir("generated/webApp"))
 }
 

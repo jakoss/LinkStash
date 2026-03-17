@@ -11,12 +11,16 @@ import kotlin.js.JsString
 import kotlin.js.Promise
 import kotlin.js.toJsString
 import kotlin.js.unsafeCast
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import pl.jsyty.linkstash.contracts.LinkStashJson
 import pl.jsyty.linkstash.contracts.client.ApiException
 import pl.jsyty.linkstash.contracts.link.LinkDto
 
 internal const val apiBaseUrlStorageKey = "linkstash.web.apiBaseUrl"
 internal const val selectedSpaceStorageKey = "linkstash.web.selectedSpaceId"
 internal const val sessionExpectedStorageKey = "linkstash.web.sessionExpected"
+internal const val workspaceCacheStorageKey = "linkstash.web.workspaceCache"
 internal const val csrfHeaderName = "X-CSRF-Token"
 
 internal suspend fun copyCurrentLinksToClipboard(links: List<LinkDto>) {
@@ -64,6 +68,19 @@ internal fun loadStoredSessionExpected(): Boolean {
     return localStorage.getItem(sessionExpectedStorageKey) == "true"
 }
 
+internal fun loadStoredWorkspaceCache(expectedApiBaseUrl: String): WebWorkspaceCache? {
+    val rawValue = localStorage.getItem(workspaceCacheStorageKey)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: return null
+
+    return runCatching {
+        LinkStashJson.instance.decodeFromString<WebWorkspaceCache>(rawValue)
+    }.getOrNull()?.takeIf { cache ->
+        cache.apiBaseUrl == expectedApiBaseUrl
+    }
+}
+
 internal fun storeSelectedSpaceId(spaceId: String?) {
     if (spaceId == null) {
         localStorage.removeItem(selectedSpaceStorageKey)
@@ -78,6 +95,18 @@ internal fun storeSessionExpected(expected: Boolean) {
     } else {
         localStorage.removeItem(sessionExpectedStorageKey)
     }
+}
+
+internal fun storeWorkspaceCache(cache: WebWorkspaceCache?) {
+    if (cache == null) {
+        localStorage.removeItem(workspaceCacheStorageKey)
+        return
+    }
+
+    localStorage.setItem(
+        workspaceCacheStorageKey,
+        LinkStashJson.instance.encodeToString(cache)
+    )
 }
 
 internal fun suggestedApiBaseUrl(): String {

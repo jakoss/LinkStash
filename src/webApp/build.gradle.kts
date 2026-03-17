@@ -8,6 +8,27 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
+val ensureWasmCustomFormatters by tasks.registering {
+    val outputFile = rootProject.layout.buildDirectory.file(
+        "wasm/packages/LinkStash-webApp/kotlin/custom-formatters.js"
+    )
+
+    outputs.file(outputFile)
+
+    doLast {
+        val targetFile = outputFile.get().asFile
+        targetFile.parentFile.mkdirs()
+        if (!targetFile.exists()) {
+            targetFile.writeText(
+                """
+                // Production webpack expects this module next to the generated wasm entrypoint.
+                export {};
+                """.trimIndent()
+            )
+        }
+    }
+}
+
 kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
@@ -38,4 +59,13 @@ kotlin {
             implementation(libs.ktor.client.js)
         }
     }
+}
+
+tasks.matching { task ->
+    task.name in setOf(
+        "wasmJsBrowserProductionWebpack",
+        "wasmJsBrowserDistribution"
+    )
+}.configureEach {
+    dependsOn(ensureWasmCustomFormatters)
 }

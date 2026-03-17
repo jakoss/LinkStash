@@ -4,15 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
@@ -60,12 +62,11 @@ import com.skydoves.landscapist.crossfade.CrossfadePlugin
 import com.skydoves.landscapist.image.LandscapistImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import pl.jsyty.linkstash.contracts.link.LinkDto
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 import pl.jsyty.linkstash.contracts.user.UserDto
 
 @Composable
-fun LoginScreen(
+internal fun LoginScreen(
     apiBaseUrlInput: String,
     onApiBaseUrlInputChange: (String) -> Unit,
     rawToken: String,
@@ -140,7 +141,7 @@ fun LoginScreen(
 }
 
 @Composable
-fun WorkspaceScreen(
+internal fun WorkspaceScreen(
     user: UserDto?,
     spaces: List<SpaceDto>,
     selectedSpaceId: String?,
@@ -152,8 +153,16 @@ fun WorkspaceScreen(
     onArchiveSpaceTitleChange: (String) -> Unit,
     pendingUrl: String,
     onPendingUrlChange: (String) -> Unit,
-    links: List<LinkDto>,
-    isBusy: Boolean,
+    links: List<WebLinkItem>,
+    isRefreshing: Boolean,
+    isExporting: Boolean,
+    isLoggingOut: Boolean,
+    isSavingLink: Boolean,
+    isSelectedSpaceLoading: Boolean,
+    isCreatingSpace: Boolean,
+    isRenamingSelectedSpace: Boolean,
+    isArchivingSelectedSpace: Boolean,
+    isDeletingSelectedSpace: Boolean,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
     onExport: () -> Unit,
@@ -163,6 +172,8 @@ fun WorkspaceScreen(
     onArchiveSpace: () -> Unit,
     onDeleteSpace: () -> Unit,
     onSaveLink: (String) -> Unit,
+    onRetryLink: (String) -> Unit,
+    onDismissFailedLink: (String) -> Unit,
     onMoveLink: (String, String) -> Unit,
     onDeleteLink: (String) -> Unit
 ) {
@@ -187,9 +198,9 @@ fun WorkspaceScreen(
         }
     }
 
-    DisposableEffect(selectedSpaceId, isBusy, isSaveDialogVisible) {
+    DisposableEffect(selectedSpaceId, isSavingLink, isSaveDialogVisible) {
         val disposeListener = registerGlobalUrlPasteListener { pastedUrl ->
-            if (isBusy) {
+            if (isSavingLink) {
                 return@registerGlobalUrlPasteListener
             }
 
@@ -208,7 +219,7 @@ fun WorkspaceScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    if (isBusy) {
+                    if (isSavingLink) {
                         return@ExtendedFloatingActionButton
                     }
                     if (prefersManualPasteFlow) {
@@ -230,7 +241,7 @@ fun WorkspaceScreen(
                 },
                 containerColor = MaterialTheme.colorScheme.secondaryContainer
             ) {
-                Text("Paste URL")
+                Text(if (isSavingLink) "Saving..." else "Paste URL")
             }
         }
     ) { innerPadding ->
@@ -266,18 +277,32 @@ fun WorkspaceScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    FilledTonalButton(onClick = onRefresh, enabled = !isBusy) {
-                        Text("Refresh")
+                    FilledTonalButton(onClick = onRefresh) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            }
+                            Text(if (isRefreshing) "Refreshing..." else "Refresh")
+                        }
                     }
-                    FilledTonalButton(onClick = onExport, enabled = !isBusy) {
-                        Text("Copy links")
+                    FilledTonalButton(
+                        onClick = onExport,
+                        enabled = !isExporting
+                    ) {
+                        Text(if (isExporting) "Copying..." else "Copy links")
                     }
                     Box {
                         TextButton(
                             onClick = { isActionsMenuExpanded = true },
-                            enabled = !isBusy
+                            enabled = !isLoggingOut
                         ) {
-                            Text("More")
+                            Text(if (isLoggingOut) "Logging out..." else "More")
                         }
 
                         DropdownMenu(
@@ -312,7 +337,6 @@ fun WorkspaceScreen(
                         Tab(
                             selected = index == selectedTabIndex,
                             onClick = { onSelectSpace(space) },
-                            enabled = !isBusy,
                             text = {
                                 Text(
                                     text = space.title,
@@ -346,14 +370,37 @@ fun WorkspaceScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "${links.size} links",
+                            text = if (isRefreshing) "Refreshing..."
+                            else "${links.size} links",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                if (links.isEmpty()) {
+                if (links.isEmpty() && isSelectedSpaceLoading) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        ElevatedCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(24.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Text(
+                                    text = "Loading links...",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                        }
+                    }
+                } else if (links.isEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         ElevatedCard(
                             modifier = Modifier.fillMaxWidth(),
@@ -377,11 +424,12 @@ fun WorkspaceScreen(
                         }
                     }
                 } else {
-                    items(links, key = { it.id }) { link ->
+                    items(links, key = { it.key }) { link ->
                         LinkCard(
-                            link = link,
+                            item = link,
                             spaces = spaces,
-                            isBusy = isBusy,
+                            onRetryLink = onRetryLink,
+                            onDismissFailedLink = onDismissFailedLink,
                             onMoveLink = onMoveLink,
                             onDeleteLink = onDeleteLink
                         )
@@ -408,7 +456,7 @@ fun WorkspaceScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(saveUrlFocusRequester),
-                        enabled = !isBusy && selectedSpaceId != null,
+                        enabled = !isSavingLink && selectedSpaceId != null,
                         label = { Text("URL") },
                         placeholder = { Text("https://example.com/article") },
                         singleLine = true
@@ -419,9 +467,9 @@ fun WorkspaceScreen(
                             onSaveLink(pendingUrl)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isBusy && selectedSpaceId != null && pendingUrl.isNotBlank()
+                        enabled = !isSavingLink && selectedSpaceId != null && pendingUrl.isNotBlank()
                     ) {
-                        Text("Save link")
+                        Text(if (isSavingLink) "Saving..." else "Save link")
                     }
                 }
             },
@@ -443,7 +491,7 @@ fun WorkspaceScreen(
                         value = newSpaceTitle,
                         onValueChange = onNewSpaceTitleChange,
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isBusy,
+                        enabled = !isCreatingSpace,
                         label = { Text("Create space") },
                         placeholder = { Text("Reading queue") },
                         singleLine = true
@@ -454,9 +502,9 @@ fun WorkspaceScreen(
                             onCreateSpace()
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !isBusy && newSpaceTitle.isNotBlank()
+                        enabled = !isCreatingSpace && newSpaceTitle.isNotBlank()
                     ) {
-                        Text("Add space")
+                        Text(if (isCreatingSpace) "Adding..." else "Add space")
                     }
 
                     if (selectedSpaceId != null) {
@@ -464,7 +512,7 @@ fun WorkspaceScreen(
                             value = renameSpaceTitle,
                             onValueChange = onRenameSpaceTitleChange,
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !isBusy,
+                            enabled = !isRenamingSelectedSpace,
                             label = { Text("Rename selected space") },
                             singleLine = true
                         )
@@ -474,15 +522,15 @@ fun WorkspaceScreen(
                                 onRenameSpace()
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !isBusy && renameSpaceTitle.isNotBlank()
+                            enabled = !isRenamingSelectedSpace && renameSpaceTitle.isNotBlank()
                         ) {
-                            Text("Rename")
+                            Text(if (isRenamingSelectedSpace) "Renaming..." else "Rename")
                         }
                         OutlinedTextField(
                             value = archiveSpaceTitle,
                             onValueChange = onArchiveSpaceTitleChange,
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !isBusy,
+                            enabled = !isArchivingSelectedSpace,
                             label = { Text("Archive into new space") },
                             placeholder = { Text("${selectedSpace?.title.orEmpty()} Archive") },
                             singleLine = true
@@ -498,18 +546,18 @@ fun WorkspaceScreen(
                                 onArchiveSpace()
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !isBusy && archiveSpaceTitle.isNotBlank()
+                            enabled = !isArchivingSelectedSpace && archiveSpaceTitle.isNotBlank()
                         ) {
-                            Text("Archive Space")
+                            Text(if (isArchivingSelectedSpace) "Archiving..." else "Archive Space")
                         }
                         TextButton(
                             onClick = {
                                 isManageSpacesDialogVisible = false
                                 onDeleteSpace()
                             },
-                            enabled = !isBusy
+                            enabled = !isDeletingSelectedSpace
                         ) {
-                            Text("Delete selected space")
+                            Text(if (isDeletingSelectedSpace) "Deleting..." else "Delete selected space")
                         }
                     }
                 }
@@ -551,12 +599,14 @@ private fun StatusCard(message: String, isError: Boolean, modifier: Modifier = M
 
 @Composable
 private fun LinkCard(
-    link: LinkDto,
+    item: WebLinkItem,
     spaces: List<SpaceDto>,
-    isBusy: Boolean,
+    onRetryLink: (String) -> Unit,
+    onDismissFailedLink: (String) -> Unit,
     onMoveLink: (String, String) -> Unit,
     onDeleteLink: (String) -> Unit
 ) {
+    val link = item.link
     val uriHandler = LocalUriHandler.current
     var isMenuExpanded by remember(link.id) { mutableStateOf(false) }
     val moveTargets = remember(spaces, link.spaceId) {
@@ -573,7 +623,10 @@ private fun LinkCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = when (item.syncState) {
+                WebLinkSyncState.Failed -> MaterialTheme.colorScheme.errorContainer
+                else -> MaterialTheme.colorScheme.surface
+            }
         )
     ) {
         Column(
@@ -591,7 +644,13 @@ private fun LinkCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { uriHandler.openUri(link.url) },
+                    .then(
+                        if (item.syncState == WebLinkSyncState.Synced) {
+                            Modifier.clickable { uriHandler.openUri(link.url) }
+                        } else {
+                            Modifier
+                        }
+                    ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
@@ -608,65 +667,116 @@ private fun LinkCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                link.excerpt?.takeIf { it.isNotBlank() }?.let { excerpt ->
-                    Text(
-                        text = excerpt,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                if (!link.createdAt.isNullOrBlank()) {
-                    Text(
-                        text = compactCreatedAt(link.createdAt.orEmpty()),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                when (item.syncState) {
+                    WebLinkSyncState.Saving -> {
+                        Text(
+                            text = "Saving...",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    WebLinkSyncState.Failed -> {
+                        Text(
+                            text = item.failureMessage ?: "Could not save this link.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+
+                    WebLinkSyncState.Synced -> {
+                        link.excerpt?.takeIf { it.isNotBlank() }?.let { excerpt ->
+                            Text(
+                                text = excerpt,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (!link.createdAt.isNullOrBlank()) {
+                            Text(
+                                text = compactCreatedAt(link.createdAt.orEmpty()),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = { uriHandler.openUri(link.url) }) {
-                    Text("Open")
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (moveTargets.isNotEmpty()) {
-                        Box {
-                            FilledTonalButton(
-                                onClick = { isMenuExpanded = true },
-                                enabled = !isBusy
-                            ) {
-                                Text("Move")
-                            }
-                            DropdownMenu(
-                                expanded = isMenuExpanded,
-                                onDismissRequest = { isMenuExpanded = false }
-                            ) {
-                                moveTargets.forEach { space ->
-                                    DropdownMenuItem(
-                                        text = { Text(space.title) },
-                                        onClick = {
-                                            isMenuExpanded = false
-                                            onMoveLink(link.id, space.id)
-                                        }
-                                    )
-                                }
-                            }
+            when (item.syncState) {
+                WebLinkSyncState.Failed -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(onClick = { onRetryLink(item.key) }) {
+                            Text("Retry")
+                        }
+                        TextButton(onClick = { onDismissFailedLink(item.key) }) {
+                            Text("Dismiss")
                         }
                     }
-                    TextButton(
-                        onClick = { onDeleteLink(link.id) },
-                        enabled = !isBusy
+                }
+
+                WebLinkSyncState.Saving -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Delete")
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = "Saving link in the background",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                WebLinkSyncState.Synced -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { uriHandler.openUri(link.url) }) {
+                            Text("Open")
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (moveTargets.isNotEmpty()) {
+                                Box {
+                                    FilledTonalButton(onClick = { isMenuExpanded = true }) {
+                                        Text("Move")
+                                    }
+                                    DropdownMenu(
+                                        expanded = isMenuExpanded,
+                                        onDismissRequest = { isMenuExpanded = false }
+                                    ) {
+                                        moveTargets.forEach { space ->
+                                            DropdownMenuItem(
+                                                text = { Text(space.title) },
+                                                onClick = {
+                                                    isMenuExpanded = false
+                                                    onMoveLink(link.id, space.id)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            TextButton(onClick = { onDeleteLink(link.id) }) {
+                                Text("Delete")
+                            }
+                        }
                     }
                 }
             }

@@ -119,9 +119,137 @@ test.describe("web compose e2e", () => {
     expect([200, 204, 502]).toContain(deleteStatus);
     if ([200, 204].includes(deleteStatus)) {
       await expect
-        .poll(async () => (await listLinks(page, deleteCandidate.spaceId)).every((link) => link.id !== deleteCandidate.id))
-        .toBe(true);
+      .poll(async () => (await listLinks(page, deleteCandidate.spaceId)).every((link) => link.id !== deleteCandidate.id))
+      .toBe(true);
     }
+  });
+
+  test("refresh keeps visible links on screen and coalesces overlapping requests", async ({ page }) => {
+    await login(page);
+
+    const inbox = await inboxSpace(page);
+    const visibleUrl = `https://example.com/refresh-visible-${Date.now()}`;
+    await createLink(page, inbox.id, visibleUrl);
+    await reloadWorkspace(page);
+    await expect(page.getByText(visibleUrl)).toBeVisible();
+
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    let refreshRequests = 0;
+
+    await page.route(`${apiBaseUrl}/v1/me`, async (route) => {
+      refreshRequests += 1;
+      await refreshGate;
+      await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByRole("button", { name: "Refreshing..." }).click();
+
+    await expect(page.getByText(visibleUrl)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Paste URL" })).toBeEnabled();
+    await expect.poll(() => refreshRequests).toBe(1);
+
+    releaseRefresh();
+    await page.unroute(`${apiBaseUrl}/v1/me`);
+    await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+  });
+
+  test("shows an optimistic card while a new link is saving", async ({ page }) => {
+    await login(page);
+
+    const inbox = await inboxSpace(page);
+    const optimisticUrl = `https://example.com/optimistic-save-${Date.now()}`;
+    let releaseCreate!: () => void;
+    const createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+
+    await page.route(`${apiBaseUrl}/v1/spaces/${inbox.id}/links`, async (route) => {
+      if (route.request().method() === "POST") {
+        await createGate;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Paste URL" }).click();
+    await page.getByLabel("URL").fill(optimisticUrl);
+    await page.getByRole("button", { name: "Save link" }).click();
+
+    await expect(page.getByText(optimisticUrl)).toBeVisible();
+    await expect(page.getByText("Saving link in the background")).toBeVisible();
+
+    releaseCreate();
+    await page.unroute(`${apiBaseUrl}/v1/spaces/${inbox.id}/links`);
+    await expect.poll(async () => (await listLinks(page, inbox.id)).some((link) => link.url === optimisticUrl)).toBe(true);
+  });
+
+  test("keeps a retryable failed card when save fails", async ({ page }) => {
+    await login(page);
+
+    const inbox = await inboxSpace(page);
+    const failingUrl = `https://example.com/failed-save-${Date.now()}`;
+
+    await page.route(`${apiBaseUrl}/v1/spaces/${inbox.id}/links`, async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "UPSTREAM_ERROR",
+            message: "Create failed in test",
+          },
+        }),
+      });
+    });
+
+    await page.getByRole("button", { name: "Paste URL" }).click();
+    await page.getByLabel("URL").fill(failingUrl);
+    await page.getByRole("button", { name: "Save link" }).click();
+
+    await expect(page.getByText(failingUrl)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Dismiss" })).toBeVisible();
+
+    await page.unroute(`${apiBaseUrl}/v1/spaces/${inbox.id}/links`);
+  });
+
+  test("deleting one link does not disable the rest of the workspace", async ({ page }) => {
+    await login(page);
+
+    const inbox = await inboxSpace(page);
+    await createLink(page, inbox.id, `https://example.com/delete-a-${Date.now()}`);
+    await createLink(page, inbox.id, `https://example.com/delete-b-${Date.now()}`);
+    await reloadWorkspace(page);
+
+    let releaseDelete!: () => void;
+    const deleteGate = new Promise<void>((resolve) => {
+      releaseDelete = resolve;
+    });
+
+    await page.route(/\/v1\/links\/.+$/, async (route) => {
+      if (route.request().method() === "DELETE") {
+        await deleteGate;
+      }
+      await route.continue();
+    });
+
+    await expect(page.getByRole("button", { name: "Delete" })).toHaveCount(2);
+    await page.getByRole("button", { name: "Delete" }).first().click();
+
+    await expect(page.getByRole("button", { name: "Delete" }).first()).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Paste URL" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+
+    releaseDelete();
+    await page.unroute(/\/v1\/links\/.+$/);
   });
 });
 
@@ -175,6 +303,19 @@ async function login(page: Page) {
   await waitForApi(page, (response) => isApi(response, "GET", "/v1/auth/csrf", 200));
 
   await expect.poll(async () => (await sessionCookieNames(page)).length).toBeGreaterThan(0);
+}
+
+async function reloadWorkspace(page: Page) {
+  await page.reload();
+  await waitForApi(page, (response) => isApi(response, "GET", "/v1/me", 200));
+  await waitForApi(page, (response) => isApi(response, "GET", "/v1/spaces", 200));
+  await expect(page.getByRole("button", { name: "Paste URL" })).toBeVisible();
+}
+
+async function inboxSpace(page: Page): Promise<SpaceDto> {
+  const inbox = (await listSpaces(page)).find((space) => space.title === "Inbox");
+  expect(inbox).toBeTruthy();
+  return inbox!;
 }
 
 async function createSpace(page: Page, title: string): Promise<SpaceDto> {

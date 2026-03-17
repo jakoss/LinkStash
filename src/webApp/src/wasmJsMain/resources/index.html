@@ -20,6 +20,34 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const isValidLocale = (value) => typeof value === 'string' && value.trim() !== '' && value !== 'undefined';
+        const fallbackLanguage = isValidLocale(document.documentElement.lang) ? document.documentElement.lang : 'en-US';
+        const resolvedLanguage = isValidLocale(window.navigator.language) ? window.navigator.language : fallbackLanguage;
+        const resolvedLanguages = Array.isArray(window.navigator.languages)
+          ? window.navigator.languages.filter(isValidLocale)
+          : [];
+
+        if (!isValidLocale(window.navigator.language)) {
+          try {
+            Object.defineProperty(window.navigator, 'language', {
+              configurable: true,
+              get: () => resolvedLanguage,
+            });
+          } catch (_) {}
+        }
+
+        if (resolvedLanguages.length === 0) {
+          try {
+            Object.defineProperty(window.navigator, 'languages', {
+              configurable: true,
+              get: () => [resolvedLanguage],
+            });
+          } catch (_) {}
+        }
+      })();
+    </script>
     <script src="linkstash-web.js"></script>
   </body>
 </html>
