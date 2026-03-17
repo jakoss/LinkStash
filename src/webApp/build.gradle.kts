@@ -1,5 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
+import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsRootExtension
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -59,6 +60,12 @@ kotlin {
             implementation(libs.ktor.client.js)
         }
     }
+}
+
+// Kotlin 2.3.10 hardcodes Node 25 for Wasm, but Yarn 1.22.17 crashes with it in the server image build.
+rootProject.extensions.findByType(WasmNodeJsRootExtension::class.java)?.let { wasmNodeJs ->
+    @Suppress("DEPRECATION_ERROR")
+    wasmNodeJs.version = "24.9.0"
 }
 
 tasks.matching { task ->
