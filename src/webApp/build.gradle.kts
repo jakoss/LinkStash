@@ -1,6 +1,7 @@
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 import org.jetbrains.kotlin.gradle.targets.wasm.nodejs.WasmNodeJsRootExtension
+import org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnRootEnvSpec
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
@@ -66,6 +67,10 @@ kotlin {
 rootProject.extensions.findByType(WasmNodeJsRootExtension::class.java)?.let { wasmNodeJs ->
     @Suppress("DEPRECATION_ERROR")
     wasmNodeJs.version = "24.9.0"
+}
+
+rootProject.extensions.findByType(WasmYarnRootEnvSpec::class.java)?.let { wasmYarn ->
+    wasmYarn.download.set(false)
 }
 
 tasks.matching { task ->
