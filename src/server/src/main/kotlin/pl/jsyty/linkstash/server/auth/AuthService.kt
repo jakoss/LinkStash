@@ -9,6 +9,8 @@ import pl.jsyty.linkstash.contracts.link.LinkDto
 import pl.jsyty.linkstash.contracts.link.LinkMoveRequest
 import pl.jsyty.linkstash.contracts.link.LinksListResponse
 import pl.jsyty.linkstash.contracts.space.SpaceCreateRequest
+import pl.jsyty.linkstash.contracts.space.SpaceArchiveRequest
+import pl.jsyty.linkstash.contracts.space.SpaceArchiveResponse
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 import pl.jsyty.linkstash.contracts.space.SpaceRenameRequest
 import pl.jsyty.linkstash.contracts.space.SpacesListResponse
@@ -127,6 +129,17 @@ class AuthService(
     suspend fun renameSpace(userId: String, spaceId: String, request: SpaceRenameRequest): SpaceDto {
         return withFreshRaindropAccessToken(userId) { accessToken ->
             linkStashDomainService.renameSpace(
+                userId = userId,
+                accessToken = accessToken,
+                spaceId = spaceId,
+                request = request
+            )
+        }
+    }
+
+    suspend fun archiveSpace(userId: String, spaceId: String, request: SpaceArchiveRequest): SpaceArchiveResponse {
+        return withFreshRaindropAccessToken(userId) { accessToken ->
+            linkStashDomainService.archiveSpace(
                 userId = userId,
                 accessToken = accessToken,
                 spaceId = spaceId,

@@ -44,6 +44,7 @@ import pl.jsyty.linkstash.contracts.error.ApiErrorCode
 import pl.jsyty.linkstash.contracts.error.ApiErrorEnvelope
 import pl.jsyty.linkstash.contracts.link.LinkCreateRequest
 import pl.jsyty.linkstash.contracts.link.LinkMoveRequest
+import pl.jsyty.linkstash.contracts.space.SpaceArchiveRequest
 import pl.jsyty.linkstash.contracts.space.SpaceCreateRequest
 import pl.jsyty.linkstash.contracts.space.SpaceRenameRequest
 import pl.jsyty.linkstash.server.config.AppConfig
@@ -268,6 +269,21 @@ fun Application.configureAuthModule(config: AppConfig, database: Database) {
                         ?: throw DomainValidationException("spaceId path param is required")
                     val request = call.receive<SpaceRenameRequest>()
                     call.respond(authService.renameSpace(principal.userId, spaceId, request))
+                }
+
+                post("/spaces/{spaceId}/archive") {
+                    call.requireCsrfIfCookieAuth(config = config, csrfTokenHasher = csrfTokenHasher)
+                    val principal = call.principal<LinkStashPrincipal>()
+                        ?: return@post call.respondApiError(
+                            status = HttpStatusCode.Unauthorized,
+                            code = ApiErrorCode.UNAUTHORIZED,
+                            message = "Authentication required"
+                        )
+
+                    val spaceId = call.parameters["spaceId"]
+                        ?: throw DomainValidationException("spaceId path param is required")
+                    val request = call.receive<SpaceArchiveRequest>()
+                    call.respond(authService.archiveSpace(principal.userId, spaceId, request))
                 }
 
                 delete("/spaces/{spaceId}") {

@@ -10,16 +10,37 @@ import kotlin.js.JsAny
 import kotlin.js.JsString
 import kotlin.js.Promise
 import kotlin.js.toJsString
+import kotlin.js.unsafeCast
 import pl.jsyty.linkstash.contracts.client.ApiException
 import pl.jsyty.linkstash.contracts.link.LinkDto
 
 internal const val apiBaseUrlStorageKey = "linkstash.web.apiBaseUrl"
 internal const val selectedSpaceStorageKey = "linkstash.web.selectedSpaceId"
+internal const val sessionExpectedStorageKey = "linkstash.web.sessionExpected"
 internal const val csrfHeaderName = "X-CSRF-Token"
 
 internal suspend fun copyCurrentLinksToClipboard(links: List<LinkDto>) {
     val payload = links.joinToString(separator = "\n") { it.url }
     copyTextToClipboardJs(payload.toJsString()).await<JsAny?>()
+}
+
+internal suspend fun readClipboardTextOrNull(): String? {
+    return runCatching {
+        readTextFromClipboardJs().await<JsString>().toString().trim()
+    }.getOrNull()?.takeIf { it.isNotEmpty() }
+}
+
+internal fun shouldUseManualPasteFlow(): Boolean {
+    return shouldUseManualPasteFlowJs()
+}
+
+internal fun registerGlobalUrlPasteListener(onUrlPasted: (String) -> Unit): () -> Unit {
+    val disposer = registerGlobalUrlPasteListenerJs { pastedUrl ->
+        onUrlPasted(pastedUrl.toString())
+    }
+    return {
+        disposeListenerJs(disposer)
+    }
 }
 
 internal fun loadStoredApiBaseUrl(): String {
@@ -39,11 +60,23 @@ internal fun loadStoredSelectedSpaceId(): String? {
         ?.takeIf { it.isNotEmpty() }
 }
 
+internal fun loadStoredSessionExpected(): Boolean {
+    return localStorage.getItem(sessionExpectedStorageKey) == "true"
+}
+
 internal fun storeSelectedSpaceId(spaceId: String?) {
     if (spaceId == null) {
         localStorage.removeItem(selectedSpaceStorageKey)
     } else {
         localStorage.setItem(selectedSpaceStorageKey, spaceId)
+    }
+}
+
+internal fun storeSessionExpected(expected: Boolean) {
+    if (expected) {
+        localStorage.setItem(sessionExpectedStorageKey, "true")
+    } else {
+        localStorage.removeItem(sessionExpectedStorageKey)
     }
 }
 
@@ -67,8 +100,13 @@ internal fun String.requireNonBlank(message: String): String {
     return takeIf { it.isNotBlank() } ?: error(message)
 }
 
+internal fun String.isHttpUrl(): Boolean {
+    val candidate = trim()
+    return candidate.startsWith("http://") || candidate.startsWith("https://")
+}
+
 internal fun String.requireHttpUrl(): String {
-    return takeIf { it.startsWith("http://") || it.startsWith("https://") }
+    return trim().takeIf { it.isHttpUrl() }
         ?: error("URL must start with http:// or https://")
 }
 
@@ -121,3 +159,66 @@ internal fun compactCreatedAt(createdAt: String): String {
     """
 )
 private external fun copyTextToClipboardJs(text: JsString): Promise<JsAny?>
+
+@JsFun(
+    """
+    () => {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        return navigator.clipboard.readText();
+      }
+      return Promise.resolve('');
+    }
+    """
+)
+private external fun readTextFromClipboardJs(): Promise<JsString>
+
+@JsFun(
+    """
+    () => {
+      const userAgent = navigator.userAgent || '';
+      const platform = navigator.platform || '';
+      const maxTouchPoints = navigator.maxTouchPoints || 0;
+      const isIPhoneOrIPad = /iPhone|iPad|iPod/.test(userAgent);
+      const isIPadOS = platform === 'MacIntel' && maxTouchPoints > 1;
+      const isFirefoxFamily = /Firefox|FxiOS|Zen/.test(userAgent);
+      return isIPhoneOrIPad || isIPadOS || isFirefoxFamily;
+    }
+    """
+)
+private external fun shouldUseManualPasteFlowJs(): Boolean
+
+@JsFun(
+    """
+    (callback) => {
+      const isEditableTarget = (target) => {
+        if (!target || !(target instanceof HTMLElement)) {
+          return false;
+        }
+        if (target.isContentEditable) {
+          return true;
+        }
+        const tagName = target.tagName;
+        return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+      };
+
+      const handler = (event) => {
+        if (event.defaultPrevented || isEditableTarget(event.target) || isEditableTarget(document.activeElement)) {
+          return;
+        }
+        const pastedText = event.clipboardData?.getData('text/plain')?.trim();
+        if (!pastedText || (!pastedText.startsWith('http://') && !pastedText.startsWith('https://'))) {
+          return;
+        }
+        event.preventDefault();
+        callback(pastedText);
+      };
+
+      document.addEventListener('paste', handler, true);
+      return () => document.removeEventListener('paste', handler, true);
+    }
+    """
+)
+private external fun registerGlobalUrlPasteListenerJs(callback: (JsString) -> Unit): JsAny
+
+@JsFun("(dispose) => dispose()")
+private external fun disposeListenerJs(dispose: JsAny)

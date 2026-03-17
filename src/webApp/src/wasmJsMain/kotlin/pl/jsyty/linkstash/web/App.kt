@@ -1,13 +1,18 @@
 package pl.jsyty.linkstash.web
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,6 +22,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import pl.jsyty.linkstash.contracts.client.ApiException
 import pl.jsyty.linkstash.contracts.error.ApiErrorCode
 import pl.jsyty.linkstash.contracts.link.LinkDto
@@ -26,19 +32,21 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun App() {
+    val storedSessionExpected = remember { loadStoredSessionExpected() }
     var apiBaseUrl by remember { mutableStateOf(loadStoredApiBaseUrl()) }
     var apiBaseUrlInput by remember { mutableStateOf(apiBaseUrl) }
     var rawToken by remember { mutableStateOf("") }
     var pendingUrl by remember { mutableStateOf("") }
     var newSpaceTitle by remember { mutableStateOf("") }
     var renameSpaceTitle by remember { mutableStateOf("") }
+    var archiveSpaceTitle by remember { mutableStateOf("") }
     var csrfToken by remember { mutableStateOf<String?>(null) }
     var user by remember { mutableStateOf<UserDto?>(null) }
     var spaces by remember { mutableStateOf(emptyList<SpaceDto>()) }
     var selectedSpaceId by remember { mutableStateOf(loadStoredSelectedSpaceId()) }
     var links by remember { mutableStateOf(emptyList<LinkDto>()) }
+    var shouldShowWorkspace by remember { mutableStateOf(storedSessionExpected) }
     var isBusy by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf("Paste a token to sign in.") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -55,13 +63,22 @@ fun App() {
         links = nextLinks
     }
 
-    fun clearAuthenticatedState(message: String) {
+    fun setSessionExpected(expected: Boolean) {
+        shouldShowWorkspace = expected
+        storeSessionExpected(expected)
+    }
+
+    fun clearAuthenticatedState() {
         csrfToken = null
         user = null
         spaces = emptyList()
         links = emptyList()
         selectSpace(null)
-        statusMessage = message
+        setSessionExpected(false)
+    }
+
+    suspend fun showStatus(message: String) {
+        snackbarHostState.showSnackbar(message)
     }
 
     suspend fun refreshWorkspace(preferredSpaceId: String? = selectedSpaceId, baseUrl: String = apiBaseUrl) {
@@ -81,6 +98,7 @@ fun App() {
         spaces = availableSpaces
         updateVisibleLinks(visibleLinks)
         selectSpace(resolvedSpaceId, availableSpaces)
+        setSessionExpected(true)
     }
 
     suspend fun runBusyAction(action: suspend () -> Unit) {
@@ -90,7 +108,7 @@ fun App() {
             action()
         } catch (error: Throwable) {
             if (error is ApiException && error.error.code == ApiErrorCode.UNAUTHORIZED) {
-                clearAuthenticatedState("Session expired. Paste a token to sign in again.")
+                clearAuthenticatedState()
             }
             errorMessage = error.humanMessage()
             snackbarHostState.showSnackbar(error.humanMessage())
@@ -99,18 +117,25 @@ fun App() {
         }
     }
 
-    LaunchedEffect(apiBaseUrl) {
+    LaunchedEffect(apiBaseUrl, shouldShowWorkspace, user) {
+        if (!shouldShowWorkspace || user != null) {
+            return@LaunchedEffect
+        }
+
+        isBusy = true
         try {
             refreshWorkspace(baseUrl = apiBaseUrl)
-            statusMessage = "Session restored"
             errorMessage = null
         } catch (error: Throwable) {
             if (error is ApiException && error.error.code == ApiErrorCode.UNAUTHORIZED) {
-                clearAuthenticatedState("Paste a token to start a new session.")
+                clearAuthenticatedState()
                 errorMessage = null
             } else {
                 errorMessage = error.humanMessage()
+                snackbarHostState.showSnackbar(error.humanMessage())
             }
+        } finally {
+            isBusy = false
         }
     }
 
@@ -124,7 +149,7 @@ fun App() {
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                if (user == null) {
+                if (!shouldShowWorkspace) {
                     LoginScreen(
                         apiBaseUrlInput = apiBaseUrlInput,
                         onApiBaseUrlInputChange = { apiBaseUrlInput = it },
@@ -137,6 +162,7 @@ fun App() {
                             scope.launch {
                                 runBusyAction {
                                     val exchange = api(nextApiBaseUrl).exchangeRaindropToken(rawToken.trim())
+                                    setSessionExpected(true)
                                     apiBaseUrl = nextApiBaseUrl
                                     storeApiBaseUrl(nextApiBaseUrl)
                                     apiBaseUrlInput = nextApiBaseUrl
@@ -144,7 +170,7 @@ fun App() {
                                     user = exchange.user
                                     csrfToken = exchange.csrfToken
                                     refreshWorkspace(baseUrl = nextApiBaseUrl)
-                                    statusMessage = "Signed in"
+                                    showStatus("Signed in")
                                 }
                             }
                         }
@@ -158,17 +184,17 @@ fun App() {
                         onRenameSpaceTitleChange = { renameSpaceTitle = it },
                         newSpaceTitle = newSpaceTitle,
                         onNewSpaceTitleChange = { newSpaceTitle = it },
+                        archiveSpaceTitle = archiveSpaceTitle,
+                        onArchiveSpaceTitleChange = { archiveSpaceTitle = it },
                         pendingUrl = pendingUrl,
                         onPendingUrlChange = { pendingUrl = it },
                         links = links,
                         isBusy = isBusy,
-                        statusMessage = statusMessage,
-                        errorMessage = errorMessage,
                         onRefresh = {
                             scope.launch {
                                 runBusyAction {
                                     refreshWorkspace()
-                                    statusMessage = "Refreshed"
+                                    showStatus("Refreshed")
                                 }
                             }
                         },
@@ -176,7 +202,8 @@ fun App() {
                             scope.launch {
                                 runBusyAction {
                                     api().logout()
-                                    clearAuthenticatedState("Logged out")
+                                    clearAuthenticatedState()
+                                    showStatus("Logged out")
                                 }
                             }
                         },
@@ -184,11 +211,7 @@ fun App() {
                             scope.launch {
                                 runBusyAction {
                                     copyCurrentLinksToClipboard(links)
-                                    statusMessage = if (links.isEmpty()) {
-                                        "No links to copy"
-                                    } else {
-                                        "Copied ${links.size} links"
-                                    }
+                                    showStatus(if (links.isEmpty()) "No links to copy" else "Copied ${links.size} links")
                                 }
                             }
                         },
@@ -198,7 +221,7 @@ fun App() {
                                 runBusyAction {
                                     val visibleLinks = api().listLinks(space.id)
                                     updateVisibleLinks(visibleLinks)
-                                    statusMessage = "Loaded ${space.title}"
+                                    showStatus("Loaded ${space.title}")
                                 }
                             }
                         },
@@ -214,7 +237,7 @@ fun App() {
                                     selectSpace(createdSpace.id, nextSpaces)
                                     updateVisibleLinks(emptyList())
                                     newSpaceTitle = ""
-                                    statusMessage = "Space created"
+                                    showStatus("Space created")
                                 }
                             }
                         },
@@ -229,7 +252,22 @@ fun App() {
                                         .sortedBy { it.title.lowercase() }
                                     spaces = nextSpaces
                                     selectSpace(currentSpaceId, nextSpaces)
-                                    statusMessage = "Space renamed"
+                                    showStatus("Space renamed")
+                                }
+                            }
+                        },
+                        onArchiveSpace = {
+                            val currentSpaceId = selectedSpaceId ?: return@WorkspaceScreen
+                            scope.launch {
+                                runBusyAction {
+                                    val title = archiveSpaceTitle.trim().requireNonBlank("Archive space title is required")
+                                    val archiveResponse = api().archiveSpace(currentSpaceId, title)
+                                    archiveSpaceTitle = ""
+                                    refreshWorkspace(preferredSpaceId = archiveResponse.space.id)
+                                    showStatus(
+                                        if (archiveResponse.movedLinksCount == 0) "Archive space created"
+                                        else "Archived ${archiveResponse.movedLinksCount} links"
+                                    )
                                 }
                             }
                         },
@@ -251,19 +289,19 @@ fun App() {
                                         selectSpace(nextSelectedSpaceId, nextSpaces)
                                         updateVisibleLinks(nextLinks)
                                     }
-                                    statusMessage = "Space deleted"
+                                    showStatus("Space deleted")
                                 }
                             }
                         },
-                        onSaveLink = {
+                        onSaveLink = { urlInput ->
                             val currentSpaceId = selectedSpaceId ?: return@WorkspaceScreen
                             scope.launch {
                                 runBusyAction {
-                                    val url = pendingUrl.trim().requireHttpUrl()
+                                    val url = urlInput.trim().requireHttpUrl()
                                     val createdLink = api().createLink(currentSpaceId, url)
                                     pendingUrl = ""
                                     updateVisibleLinks(listOf(createdLink) + links.filterNot { it.id == createdLink.id })
-                                    statusMessage = "Link saved"
+                                    showStatus("Link saved")
                                 }
                             }
                         },
@@ -272,7 +310,7 @@ fun App() {
                                 runBusyAction {
                                     api().moveLink(linkId, targetSpaceId)
                                     updateVisibleLinks(links.filterNot { it.id == linkId })
-                                    statusMessage = "Link moved"
+                                    showStatus("Link moved")
                                 }
                             }
                         },
@@ -281,7 +319,7 @@ fun App() {
                                 runBusyAction {
                                     api().deleteLink(linkId)
                                     updateVisibleLinks(links.filterNot { it.id == linkId })
-                                    statusMessage = "Link deleted"
+                                    showStatus("Link deleted")
                                 }
                             }
                         }
@@ -295,11 +333,26 @@ fun App() {
                 )
 
                 if (isBusy) {
-                    LinearProgressIndicator(
+                    Surface(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .padding(top = 18.dp)
                             .align(Alignment.TopCenter)
-                    )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = "Working...",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
                 }
             }
         }

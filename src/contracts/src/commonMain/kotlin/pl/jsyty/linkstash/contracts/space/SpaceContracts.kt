@@ -23,3 +23,14 @@ data class SpaceCreateRequest(
 data class SpaceRenameRequest(
     val title: String
 )
+
+@Serializable
+data class SpaceArchiveRequest(
+    val title: String
+)
+
+@Serializable
+data class SpaceArchiveResponse(
+    val space: SpaceDto,
+    val movedLinksCount: Int
+)

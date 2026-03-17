@@ -56,6 +56,8 @@ abstract class ApiTestBase {
 
     protected fun spacePath(spaceId: String): String = "$SPACES_PATH/$spaceId"
 
+    protected fun archiveSpacePath(spaceId: String): String = "${spacePath(spaceId)}/archive"
+
     protected fun spaceLinksPath(spaceId: String): String = "${spacePath(spaceId)}/links"
 
     protected fun linkPath(linkId: String): String = "$LINKS_PATH/$linkId"

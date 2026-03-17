@@ -3,22 +3,23 @@ package pl.jsyty.linkstash.web
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -30,19 +31,24 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +58,8 @@ import com.skydoves.landscapist.ImageOptions
 import com.skydoves.landscapist.components.rememberImageComponent
 import com.skydoves.landscapist.crossfade.CrossfadePlugin
 import com.skydoves.landscapist.image.LandscapistImage
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import pl.jsyty.linkstash.contracts.link.LinkDto
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 import pl.jsyty.linkstash.contracts.user.UserDto
@@ -140,36 +148,86 @@ fun WorkspaceScreen(
     onRenameSpaceTitleChange: (String) -> Unit,
     newSpaceTitle: String,
     onNewSpaceTitleChange: (String) -> Unit,
+    archiveSpaceTitle: String,
+    onArchiveSpaceTitleChange: (String) -> Unit,
     pendingUrl: String,
     onPendingUrlChange: (String) -> Unit,
     links: List<LinkDto>,
     isBusy: Boolean,
-    statusMessage: String,
-    errorMessage: String?,
     onRefresh: () -> Unit,
     onLogout: () -> Unit,
     onExport: () -> Unit,
     onSelectSpace: (SpaceDto) -> Unit,
     onCreateSpace: () -> Unit,
     onRenameSpace: () -> Unit,
+    onArchiveSpace: () -> Unit,
     onDeleteSpace: () -> Unit,
-    onSaveLink: () -> Unit,
+    onSaveLink: (String) -> Unit,
     onMoveLink: (String, String) -> Unit,
     onDeleteLink: (String) -> Unit
 ) {
     val selectedSpace = spaces.firstOrNull { it.id == selectedSpaceId }
     val displayName = user?.displayName ?: user?.id.orEmpty()
+    val prefersManualPasteFlow = remember { shouldUseManualPasteFlow() }
     val selectedTabIndex = spaces.indexOfFirst { it.id == selectedSpaceId }
         .takeIf { it >= 0 }
         ?: 0
     var isActionsMenuExpanded by remember { mutableStateOf(false) }
     var isSaveDialogVisible by remember { mutableStateOf(false) }
     var isManageSpacesDialogVisible by remember { mutableStateOf(false) }
+    val saveUrlFocusRequester = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(isSaveDialogVisible) {
+        if (isSaveDialogVisible) {
+            if (prefersManualPasteFlow) {
+                delay(180)
+            }
+            saveUrlFocusRequester.requestFocus()
+        }
+    }
+
+    DisposableEffect(selectedSpaceId, isBusy, isSaveDialogVisible) {
+        val disposeListener = registerGlobalUrlPasteListener { pastedUrl ->
+            if (isBusy) {
+                return@registerGlobalUrlPasteListener
+            }
+
+            onPendingUrlChange(pastedUrl)
+            if (selectedSpaceId != null && !isSaveDialogVisible) {
+                onSaveLink(pastedUrl)
+            } else {
+                isSaveDialogVisible = true
+            }
+        }
+
+        onDispose(disposeListener)
+    }
 
     Scaffold(
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { isSaveDialogVisible = true },
+                onClick = {
+                    if (isBusy) {
+                        return@ExtendedFloatingActionButton
+                    }
+                    if (prefersManualPasteFlow) {
+                        isSaveDialogVisible = true
+                        return@ExtendedFloatingActionButton
+                    }
+                    scope.launch {
+                        val clipboardUrl = readClipboardTextOrNull()
+                            ?.takeIf { it.isHttpUrl() }
+                            ?.trim()
+
+                        if (selectedSpaceId != null && clipboardUrl != null) {
+                            onPendingUrlChange(clipboardUrl)
+                            onSaveLink(clipboardUrl)
+                        } else {
+                            isSaveDialogVisible = true
+                        }
+                    }
+                },
                 containerColor = MaterialTheme.colorScheme.secondaryContainer
             ) {
                 Text("Paste URL")
@@ -246,7 +304,7 @@ fun WorkspaceScreen(
             }
 
             if (spaces.isNotEmpty()) {
-                ScrollableTabRow(
+                SecondaryScrollableTabRow(
                     selectedTabIndex = selectedTabIndex,
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -267,22 +325,16 @@ fun WorkspaceScreen(
                 }
             }
 
-            if (errorMessage != null || statusMessage.isNotBlank()) {
-                StatusCard(
-                    message = errorMessage ?: statusMessage,
-                    isError = errorMessage != null,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
-                )
-            }
-
-            LazyColumn(
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 320.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 contentPadding = PaddingValues(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 108.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                item {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -302,7 +354,7 @@ fun WorkspaceScreen(
                 }
 
                 if (links.isEmpty()) {
-                    item {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
                         ElevatedCard(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(24.dp)
@@ -353,7 +405,9 @@ fun WorkspaceScreen(
                     OutlinedTextField(
                         value = pendingUrl,
                         onValueChange = onPendingUrlChange,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(saveUrlFocusRequester),
                         enabled = !isBusy && selectedSpaceId != null,
                         label = { Text("URL") },
                         placeholder = { Text("https://example.com/article") },
@@ -362,7 +416,7 @@ fun WorkspaceScreen(
                     Button(
                         onClick = {
                             isSaveDialogVisible = false
-                            onSaveLink()
+                            onSaveLink(pendingUrl)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !isBusy && selectedSpaceId != null && pendingUrl.isNotBlank()
@@ -423,6 +477,30 @@ fun WorkspaceScreen(
                             enabled = !isBusy && renameSpaceTitle.isNotBlank()
                         ) {
                             Text("Rename")
+                        }
+                        OutlinedTextField(
+                            value = archiveSpaceTitle,
+                            onValueChange = onArchiveSpaceTitleChange,
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isBusy,
+                            label = { Text("Archive into new space") },
+                            placeholder = { Text("${selectedSpace?.title.orEmpty()} Archive") },
+                            singleLine = true
+                        )
+                        Text(
+                            text = "Creates a new space and moves all ${links.size} links from ${selectedSpace?.title ?: "the selected space"} into it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(
+                            onClick = {
+                                isManageSpacesDialogVisible = false
+                                onArchiveSpace()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !isBusy && archiveSpaceTitle.isNotBlank()
+                        ) {
+                            Text("Archive Space")
                         }
                         TextButton(
                             onClick = {
@@ -605,7 +683,7 @@ private fun LinkCardPreview(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(208.dp)
+            .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(20.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
         contentAlignment = Alignment.Center
@@ -624,11 +702,24 @@ private fun LinkCardPreview(
                 )
             )
         } else {
-            Text(
-                text = compactUrlLabel,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Text(
+                    text = "No preview",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = compactUrlLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

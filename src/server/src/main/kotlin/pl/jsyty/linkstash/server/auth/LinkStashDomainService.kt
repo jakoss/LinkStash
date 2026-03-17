@@ -5,6 +5,8 @@ import pl.jsyty.linkstash.contracts.link.LinkDto
 import pl.jsyty.linkstash.contracts.link.LinkMoveRequest
 import pl.jsyty.linkstash.contracts.link.LinksListResponse
 import pl.jsyty.linkstash.contracts.space.SpaceCreateRequest
+import pl.jsyty.linkstash.contracts.space.SpaceArchiveRequest
+import pl.jsyty.linkstash.contracts.space.SpaceArchiveResponse
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 import pl.jsyty.linkstash.contracts.space.SpaceRenameRequest
 
@@ -58,6 +60,60 @@ class LinkStashDomainService(
         )
 
         return renamedSpace.toSpaceDto()
+    }
+
+    suspend fun archiveSpace(
+        userId: String,
+        accessToken: String,
+        spaceId: String,
+        request: SpaceArchiveRequest
+    ): SpaceArchiveResponse {
+        val normalizedSpaceId = spaceId.trim()
+        val title = request.title.trim()
+        if (title.isBlank()) throw DomainValidationException("Archive space title is required")
+
+        val bootstrapResult = linkStashBootstrapService.ensureBootstrap(userId, accessToken)
+        requireSpaceBelongsToRoot(
+            accessToken = accessToken,
+            rootCollectionId = bootstrapResult.rootCollectionId,
+            spaceId = normalizedSpaceId
+        )
+
+        val archivedSpace = raindropClient.createCollection(
+            accessToken = accessToken,
+            title = title,
+            parentCollectionId = bootstrapResult.rootCollectionId
+        )
+
+        var movedLinksCount = 0
+        while (true) {
+            val sourceLinksBatch = raindropClient.listRaindrops(
+                accessToken = accessToken,
+                collectionId = normalizedSpaceId,
+                page = 0,
+                perPage = LINKS_PAGE_SIZE
+            )
+            if (sourceLinksBatch.isEmpty()) {
+                break
+            }
+
+            sourceLinksBatch.forEach { link ->
+                val linkId = link.stableId()
+                    ?: throw RaindropUpstreamException("Raindrop link payload is missing id")
+                raindropClient.moveRaindropToCollection(
+                    accessToken = accessToken,
+                    raindropId = linkId,
+                    collectionId = archivedSpace.stableId()
+                        ?: throw RaindropUpstreamException("Raindrop collection payload is missing id")
+                )
+                movedLinksCount += 1
+            }
+        }
+
+        return SpaceArchiveResponse(
+            space = archivedSpace.toSpaceDto(),
+            movedLinksCount = movedLinksCount
+        )
     }
 
     suspend fun deleteSpace(

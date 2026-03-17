@@ -29,6 +29,8 @@ import pl.jsyty.linkstash.contracts.link.LinkCreateRequest
 import pl.jsyty.linkstash.contracts.link.LinkDto
 import pl.jsyty.linkstash.contracts.link.LinkMoveRequest
 import pl.jsyty.linkstash.contracts.link.LinksListResponse
+import pl.jsyty.linkstash.contracts.space.SpaceArchiveRequest
+import pl.jsyty.linkstash.contracts.space.SpaceArchiveResponse
 import pl.jsyty.linkstash.contracts.space.SpaceCreateRequest
 import pl.jsyty.linkstash.contracts.space.SpaceDto
 import pl.jsyty.linkstash.contracts.space.SpaceRenameRequest
@@ -84,6 +86,14 @@ internal class BrowserApi(
             path = "/v1/spaces/$spaceId",
             method = "PATCH",
             bodyText = LinkStashJson.instance.encodeToString(SpaceRenameRequest(title = title))
+        )
+    }
+
+    suspend fun archiveSpace(spaceId: String, title: String): SpaceArchiveResponse {
+        return request(
+            path = "/v1/spaces/$spaceId/archive",
+            method = "POST",
+            bodyText = LinkStashJson.instance.encodeToString(SpaceArchiveRequest(title = title))
         )
     }
 
